@@ -68,26 +68,7 @@ wss.on('connection',ws=>{
       send(ws,{type:'roomJoined',role,room:password,password,playerCount:room.playerCount,...snapshot(room)});
       broadcast(room,roomStatus(room));
       console.log(`ルーム参加: ${password} PLAYER ${role} (${room.players.length}/${room.playerCount})`);
-      if(room.players.length===room.playerCount && !room.started){
-        room.started=true; room.roundOver=false; for(const p of room.players)p.alive=true;
-        const st=snapshot(room);
-        const startMessage={type:'start',playerCount:room.playerCount,count:room.players.length,started:true,...st};
-        // まず全員へ即時送信。
-        for(const p of room.players){
-          send(p.ws,{type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:true,...st});
-          send(p.ws,startMessage);
-        }
-        // Render/回線の一時的な取りこぼし対策として、開始通知を少しだけ再送する。
-        for(const delay of [500,1500,3000]){
-          setTimeout(()=>{
-            const r=rooms.get(password);
-            if(!r || !r.started || r.players.length<r.playerCount) return;
-            const latest=snapshot(r);
-            for(const pl of r.players) send(pl.ws,{type:'start',playerCount:r.playerCount,count:r.players.length,started:true,...latest});
-          },delay);
-        }
-        console.log(`対戦開始: ${password}`);
-      }
+      // 人数がそろっても自動開始しない。ホストのSTART操作を待つ。
       return;
     }
 
@@ -101,6 +82,20 @@ wss.on('connection',ws=>{
     }
 
     if(msg.type==='input'){
+      if(msg.action==='startMatch'){
+        if(me.role!==1) return send(ws,{type:'error',message:'対戦を開始できるのはホストだけです。'});
+        if(room.started) return;
+        if(room.players.length!==room.playerCount) return send(ws,{type:'error',message:`まだ人数がそろっていません（${room.players.length}/${room.playerCount}人）。`});
+        room.started=true; room.roundOver=false; for(const p of room.players)p.alive=true;
+        const st=snapshot(room);
+        const startMessage={type:'start',playerCount:room.playerCount,count:room.players.length,started:true,...st};
+        for(const p of room.players){ send(p.ws,{type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:true,...st}); send(p.ws,startMessage); }
+        for(const delay of [500,1500,3000]){
+          setTimeout(()=>{ const r=rooms.get(room.password); if(!r||!r.started||r.players.length<r.playerCount)return; const latest=snapshot(r); for(const pl of r.players)send(pl.ws,{type:'start',playerCount:r.playerCount,count:r.players.length,started:true,...latest}); },delay);
+        }
+        console.log(`ホストが対戦開始: ${room.password}`);
+        return;
+      }
       if(msg.action==='attack'){
         const amount=Math.max(0,Math.min(40,Number(msg.amount)||0));
         if(amount>0) broadcast(room,{type:'attack',player:me.role,amount},ws);
