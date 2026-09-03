@@ -35,6 +35,8 @@ var onlineStatus = '';
 var onlineGuestKeyState = { left:false, right:false, down:false };
 var onlineLastInputSend = 0;
 var onlineLastStateSend = 0;
+var onlineStateSeq = 0;
+var onlineLastAppliedSeq = 0;
 var onlinePendingState = null;
 var onlineStateApplyTimer = null;
 var onlinePrevHardDrop = false;
@@ -714,11 +716,15 @@ function drawNextAndStatsUI(
 
 // ゲームボードの描画
 function drawGameBoard(board, xOffset) {
+  // オンライン受信データが壊れても描画ループを止めない。
+  if (!Array.isArray(board) || board.length !== GYO) return;
   for (let i = 0; i < GYO; i++) {
+    if (!Array.isArray(board[i]) || board[i].length !== RETSU) continue;
     for (let j = 0; j < RETSU; j++) {
-      if (board[i][j] !== 0) {
-        fill(burokkuIro[board[i][j]]); 
-        stroke(10, 10, 20, 100); 
+      const cell = Number(board[i][j]);
+      if (cell !== 0 && Number.isInteger(cell) && cell >= 1 && cell < burokkuIro.length) {
+        fill(burokkuIro[cell]);
+        stroke(10, 10, 20, 100);
         strokeWeight(1);
         rect(j * BLOKU_SAIZU, i * BLOKU_SAIZU, BLOKU_SAIZU, BLOKU_SAIZU);
       }
@@ -728,48 +734,55 @@ function drawGameBoard(board, xOffset) {
 
 // 操作ブロックとゴーストブロックの描画
 function drawImaNoBurokku(burokku, xOffset) {
-  if (!burokku) return; 
- 
-  // ゴーストブロック (着地位置) を描画
-  let dropY = burokku.y;
-  while (!butsukaru({ ...burokku, y: dropY + 1 }, burokku === imaNoBurokku ? gameBoard : gameBoardP2)) { 
+  if (!burokku || !Array.isArray(burokku.shape) || !Number.isFinite(Number(burokku.x)) || !Number.isFinite(Number(burokku.y))) return;
+  const board = burokku === imaNoBurokku ? gameBoard : gameBoardP2;
+  if (!Array.isArray(board) || board.length !== GYO) return;
+
+  // ゴースト位置の探索は安全上 GYO+4 回までに制限。
+  let dropY = Number(burokku.y);
+  for (let n = 0; n <= GYO + 4; n++) {
+    const test = { ...burokku, y: dropY + 1 };
+    if (butsukaru(test, board)) break;
     dropY++;
   }
- 
+
   push();
-  noFill(); 
-  stroke(255, 255, 255, 100); 
+  noFill();
+  stroke(255, 255, 255, 100);
   strokeWeight(2);
   for (let i = 0; i < burokku.shape.length; i++) {
+    if (!Array.isArray(burokku.shape[i])) continue;
     for (let j = 0; j < burokku.shape[i].length; j++) {
       if (burokku.shape[i][j] !== 0) {
         rect(
-          (burokku.x + j) * BLOKU_SAIZU,
+          (Number(burokku.x) + j) * BLOKU_SAIZU,
           (dropY + i) * BLOKU_SAIZU,
-          BLOKU_SAIZU,
-          BLOKU_SAIZU
-        ); 
-      }
-    }
-  }
-  pop();
- 
-  // 操作ブロック本体を描画
-  fill(burokkuIro[burokku.color]); 
-  stroke(10, 10, 20, 100); 
-  strokeWeight(1);
-  for (let i = 0; i < burokku.shape.length; i++) {
-    for (let j = 0; j < burokku.shape[i].length; j++) {
-      if (burokku.shape[i][j] !== 0) {
-        rect(
-          (burokku.x + j) * BLOKU_SAIZU,
-          (burokku.y + i) * BLOKU_SAIZU,
           BLOKU_SAIZU,
           BLOKU_SAIZU
         );
       }
     }
   }
+  pop();
+
+  push();
+  noStroke();
+  if (burokku.color >= 1 && burokku.color < burokkuIro.length) fill(burokkuIro[burokku.color]);
+  else fill(255);
+  for (let i = 0; i < burokku.shape.length; i++) {
+    if (!Array.isArray(burokku.shape[i])) continue;
+    for (let j = 0; j < burokku.shape[i].length; j++) {
+      if (burokku.shape[i][j] !== 0) {
+        rect(
+          (Number(burokku.x) + j) * BLOKU_SAIZU,
+          (Number(burokku.y) + i) * BLOKU_SAIZU,
+          BLOKU_SAIZU,
+          BLOKU_SAIZU
+        );
+      }
+    }
+  }
+  pop();
 }
 
 // ミニブロック (HOLD/NEXT) の描画
@@ -1773,16 +1786,17 @@ function connectOnlineSocket(action) {
 
     if (msg.type === 'state') {
       if (onlineRole === 2 && msg.state && typeof msg.state === 'object') {
-        // 受信のたびに即時反映せず、最新状態だけを100msごとに反映する。
-        // これで低性能なスマホ/Chromebookでも受信処理が詰まりにくくなる。
-        onlinePendingState = msg.state;
-        if (onlineStateApplyTimer === null) {
-          onlineStateApplyTimer = setTimeout(() => {
-            const latest = onlinePendingState;
-            onlinePendingState = null;
-            onlineStateApplyTimer = null;
-            if (latest && onlineRole === 2) applyOnlineState(latest);
-          }, 100);
+        const seq = Number(msg.state.seq || 0);
+        if (!seq || seq > onlineLastAppliedSeq) {
+          onlinePendingState = msg.state;
+          if (!onlineStateApplyTimer) {
+            onlineStateApplyTimer = setTimeout(() => {
+              const pending = onlinePendingState;
+              onlinePendingState = null;
+              onlineStateApplyTimer = null;
+              if (pending) applyOnlineState(pending);
+            }, 80);
+          }
         }
       }
       return;
@@ -1817,6 +1831,8 @@ function connectOnlineSocket(action) {
 
   onlineSocket.onclose = () => {
     onlineConnected = false;
+    onlinePendingState = null;
+    if (onlineStateApplyTimer) { clearTimeout(onlineStateApplyTimer); onlineStateApplyTimer = null; }
     if (gameMode === 'ONLINE') {
       onlineStatus = 'サーバーとの接続が切れました';
       isPaused = true;
@@ -1830,17 +1846,17 @@ function connectOnlineSocket(action) {
 
 function sendOnlineAction(action) {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
-  try {
-    onlineSocket.send(JSON.stringify({ type:'input', action:action }));
-  } catch (e) {}
+  if (onlineSocket.bufferedAmount > 64 * 1024) return;
+  try { onlineSocket.send(JSON.stringify({ type:'input', action:action })); } catch (e) {}
 }
 
 function handleOnlineGuestInput() {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
   const now = millis();
-  if (now - onlineLastInputSend < 50) return;
+  if (now - onlineLastInputSend < 30) return;
   onlineLastInputSend = now;
 
+  if (onlineSocket.bufferedAmount > 64 * 1024) return;
   try {
     onlineSocket.send(JSON.stringify({
       type:'inputState',
@@ -1904,13 +1920,48 @@ function handleOnlineRemoteAction(action) {
   }
 }
 
+function cloneOnlineValue(value) {
+  try { return JSON.parse(JSON.stringify(value)); } catch (e) { return null; }
+}
+
+function isValidOnlineBoard(board) {
+  if (!Array.isArray(board) || board.length !== GYO) return false;
+  for (let i = 0; i < GYO; i++) {
+    if (!Array.isArray(board[i]) || board[i].length !== RETSU) return false;
+    for (let j = 0; j < RETSU; j++) {
+      const v = Number(board[i][j]);
+      if (!Number.isInteger(v) || v < 0 || v > 8) return false;
+    }
+  }
+  return true;
+}
+
+function isValidOnlineBlock(block) {
+  if (!block || typeof block !== 'object') return false;
+  if (!Number.isInteger(Number(block.type)) || Number(block.type) < 0 || Number(block.type) > 6) return false;
+  if (!Number.isFinite(Number(block.x)) || !Number.isFinite(Number(block.y))) return false;
+  if (!Number.isInteger(Number(block.rotation)) || Number(block.rotation) < 0 || Number(block.rotation) > 3) return false;
+  if (!Array.isArray(block.shape) || block.shape.length < 2 || block.shape.length > 4) return false;
+  for (const row of block.shape) {
+    if (!Array.isArray(row) || row.length < 2 || row.length > 4) return false;
+    for (const cell of row) if (cell !== 0 && cell !== 1) return false;
+  }
+  return true;
+}
+
+function isValidOnlineArray(value, maxLength) {
+  return Array.isArray(value) && value.length <= maxLength;
+}
+
 function serializeOnlineState() {
+  onlineStateSeq++;
   return {
+    seq: onlineStateSeq,
     gameMode:'ONLINE',
-    gameBoard:gameBoard,
-    gameBoardP2:gameBoardP2,
-    imaNoBurokku:imaNoBurokku,
-    imaNoBurokkuP2:imaNoBurokkuP2,
+    gameBoard:cloneOnlineValue(gameBoard),
+    gameBoardP2:cloneOnlineValue(gameBoardP2),
+    imaNoBurokku:cloneOnlineValue(imaNoBurokku),
+    imaNoBurokkuP2:cloneOnlineValue(imaNoBurokkuP2),
     sukoa:sukoa,
     cpuScore:cpuScore,
     attackPower:attackPower,
@@ -1923,12 +1974,12 @@ function serializeOnlineState() {
     cpuHoldBlock:cpuHoldBlock,
     horudoShiyouzumi:horudoShiyouzumi,
     cpuHoldUsed:cpuHoldUsed,
-    playerAttackQueue:playerAttackQueue,
-    player2AttackQueue:player2AttackQueue,
-    p1BurokkuBaggu:p1BurokkuBaggu,
-    p1TsugiBurokkuBaggu:p1TsugiBurokkuBaggu,
-    p2BurokkuBaggu:p2BurokkuBaggu,
-    p2TsugiBurokkuBaggu:p2TsugiBurokkuBaggu,
+    playerAttackQueue:cloneOnlineValue(playerAttackQueue),
+    player2AttackQueue:cloneOnlineValue(player2AttackQueue),
+    p1BurokkuBaggu:cloneOnlineValue(p1BurokkuBaggu),
+    p1TsugiBurokkuBaggu:cloneOnlineValue(p1TsugiBurokkuBaggu),
+    p2BurokkuBaggu:cloneOnlineValue(p2BurokkuBaggu),
+    p2TsugiBurokkuBaggu:cloneOnlineValue(p2TsugiBurokkuBaggu),
     playerWins:playerWins,
     p2Wins:p2Wins,
     isStarted:isStarted,
@@ -1940,19 +1991,24 @@ function serializeOnlineState() {
     isLandedP2:isLandedP2,
     lockDelayResetCount:lockDelayResetCount,
     lockDelayResetCountP2:lockDelayResetCountP2,
-    countdownRemaining:max(0, countdownDuration - (millis() - countdownTime))
+    countdownRemaining:Math.max(0, Math.min(countdownDuration, countdownDuration - (millis() - countdownTime)))
   };
 }
 
 function sendOnlineState(force=false) {
   if (onlineRole !== 1 || !onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
-  if (!force && millis() - onlineLastStateSend < 150) return;
-  // 送信待ちが膨らんだら、次のフレームで無理に積まない。
+  const now = millis();
+  if (!force && now - onlineLastStateSend < 150) return;
+  // WebSocket送信待ちが膨らんだら新しい状態を優先して一旦捨てる。
   if (onlineSocket.bufferedAmount > 256 * 1024) return;
-  onlineLastStateSend = millis();
+  onlineLastStateSend = now;
   try {
-    onlineSocket.send(JSON.stringify({ type:'state', state:serializeOnlineState() }));
-  } catch (e) {}
+    const payload = JSON.stringify({ type:'state', state:serializeOnlineState() });
+    if (payload.length > 128 * 1024) return;
+    onlineSocket.send(payload);
+  } catch (e) {
+    onlineStatus = '状態送信エラー';
+  }
 }
 
 function sendOnlineStateIfNeeded() {
@@ -1960,44 +2016,57 @@ function sendOnlineStateIfNeeded() {
 }
 
 function applyOnlineState(s) {
-  if (!s) return;
-  gameMode = 'ONLINE';
-  gameBoard = s.gameBoard || gameBoard;
-  gameBoardP2 = s.gameBoardP2 || gameBoardP2;
-  imaNoBurokku = s.imaNoBurokku || imaNoBurokku;
-  imaNoBurokkuP2 = s.imaNoBurokkuP2 || imaNoBurokkuP2;
-  sukoa = s.sukoa ?? sukoa;
-  cpuScore = s.cpuScore ?? cpuScore;
-  attackPower = s.attackPower ?? attackPower;
-  cpuAttackPower = s.cpuAttackPower ?? cpuAttackPower;
-  backToBack = s.backToBack ?? backToBack;
-  cpuBackToBack = s.cpuBackToBack ?? cpuBackToBack;
-  comboCount = s.comboCount ?? comboCount;
-  cpuComboCount = s.cpuComboCount ?? cpuComboCount;
-  horudoBurokku = s.horudoBurokku ?? horudoBurokku;
-  cpuHoldBlock = s.cpuHoldBlock ?? cpuHoldBlock;
-  horudoShiyouzumi = s.horudoShiyouzumi ?? horudoShiyouzumi;
-  cpuHoldUsed = s.cpuHoldUsed ?? cpuHoldUsed;
-  playerAttackQueue = s.playerAttackQueue || [];
-  player2AttackQueue = s.player2AttackQueue || [];
-  p1BurokkuBaggu = s.p1BurokkuBaggu || [];
-  p1TsugiBurokkuBaggu = s.p1TsugiBurokkuBaggu || [];
-  p2BurokkuBaggu = s.p2BurokkuBaggu || [];
-  p2TsugiBurokkuBaggu = s.p2TsugiBurokkuBaggu || [];
-  playerWins = s.playerWins ?? playerWins;
-  p2Wins = s.p2Wins ?? p2Wins;
-  isStarted = s.isStarted ?? isStarted;
-  isPaused = s.isPaused ?? isPaused;
-  isRoundOver = s.isRoundOver ?? isRoundOver;
-  isMatchOver = s.isMatchOver ?? isMatchOver;
-  roundWinner = s.roundWinner || '';
-  isLanded = s.isLanded ?? isLanded;
-  isLandedP2 = s.isLandedP2 ?? isLandedP2;
-  lockDelayResetCount = s.lockDelayResetCount ?? lockDelayResetCount;
-  lockDelayResetCountP2 = s.lockDelayResetCountP2 ?? lockDelayResetCountP2;
+  if (!s || typeof s !== 'object') return false;
 
-  const remain = Number(s.countdownRemaining || 0);
+  const seq = Number(s.seq || 0);
+  if (seq && seq <= onlineLastAppliedSeq) return false;
+
+  // 盤面・現在ブロックは最重要。どれかが壊れていたら「状態全体」を反映しない。
+  if (!isValidOnlineBoard(s.gameBoard) || !isValidOnlineBoard(s.gameBoardP2)) return false;
+  if (!isValidOnlineBlock(s.imaNoBurokku) || !isValidOnlineBlock(s.imaNoBurokkuP2)) return false;
+  if (!isValidOnlineArray(s.playerAttackQueue, 40) || !isValidOnlineArray(s.player2AttackQueue, 40)) return false;
+  if (!isValidOnlineArray(s.p1BurokkuBaggu, 20) || !isValidOnlineArray(s.p1TsugiBurokkuBaggu, 20) ||
+      !isValidOnlineArray(s.p2BurokkuBaggu, 20) || !isValidOnlineArray(s.p2TsugiBurokkuBaggu, 20)) return false;
+
+  gameMode = 'ONLINE';
+  gameBoard = cloneOnlineValue(s.gameBoard);
+  gameBoardP2 = cloneOnlineValue(s.gameBoardP2);
+  imaNoBurokku = cloneOnlineValue(s.imaNoBurokku);
+  imaNoBurokkuP2 = cloneOnlineValue(s.imaNoBurokkuP2);
+  sukoa = Number.isFinite(Number(s.sukoa)) ? Number(s.sukoa) : sukoa;
+  cpuScore = Number.isFinite(Number(s.cpuScore)) ? Number(s.cpuScore) : cpuScore;
+  attackPower = Number.isFinite(Number(s.attackPower)) ? Number(s.attackPower) : attackPower;
+  cpuAttackPower = Number.isFinite(Number(s.cpuAttackPower)) ? Number(s.cpuAttackPower) : cpuAttackPower;
+  backToBack = Number.isFinite(Number(s.backToBack)) ? Number(s.backToBack) : backToBack;
+  cpuBackToBack = Number.isFinite(Number(s.cpuBackToBack)) ? Number(s.cpuBackToBack) : cpuBackToBack;
+  comboCount = Number.isFinite(Number(s.comboCount)) ? Number(s.comboCount) : comboCount;
+  cpuComboCount = Number.isFinite(Number(s.cpuComboCount)) ? Number(s.cpuComboCount) : cpuComboCount;
+  horudoBurokku = (s.horudoBurokku === null || Number.isInteger(Number(s.horudoBurokku))) ? s.horudoBurokku : horudoBurokku;
+  cpuHoldBlock = (s.cpuHoldBlock === null || Number.isInteger(Number(s.cpuHoldBlock))) ? s.cpuHoldBlock : cpuHoldBlock;
+  horudoShiyouzumi = !!s.horudoShiyouzumi;
+  cpuHoldUsed = !!s.cpuHoldUsed;
+  playerAttackQueue = cloneOnlineValue(s.playerAttackQueue);
+  player2AttackQueue = cloneOnlineValue(s.player2AttackQueue);
+  p1BurokkuBaggu = cloneOnlineValue(s.p1BurokkuBaggu);
+  p1TsugiBurokkuBaggu = cloneOnlineValue(s.p1TsugiBurokkuBaggu);
+  p2BurokkuBaggu = cloneOnlineValue(s.p2BurokkuBaggu);
+  p2TsugiBurokkuBaggu = cloneOnlineValue(s.p2TsugiBurokkuBaggu);
+  playerWins = Math.max(0, Math.min(MATCH_WIN_COUNT, Number(s.playerWins) || 0));
+  p2Wins = Math.max(0, Math.min(MATCH_WIN_COUNT, Number(s.p2Wins) || 0));
+  isStarted = !!s.isStarted;
+  isPaused = !!s.isPaused;
+  isRoundOver = !!s.isRoundOver;
+  isMatchOver = !!s.isMatchOver;
+  roundWinner = typeof s.roundWinner === 'string' ? s.roundWinner : '';
+  isLanded = !!s.isLanded;
+  isLandedP2 = !!s.isLandedP2;
+  lockDelayResetCount = Math.max(0, Math.min(MAX_LOCK_DELAY_RESETS, Number(s.lockDelayResetCount) || 0));
+  lockDelayResetCountP2 = Math.max(0, Math.min(MAX_LOCK_DELAY_RESETS, Number(s.lockDelayResetCountP2) || 0));
+
+  const remain = Math.max(0, Math.min(countdownDuration, Number(s.countdownRemaining) || 0));
   countdownTime = remain > 0 ? millis() - (countdownDuration - remain) : 0;
+  if (seq) onlineLastAppliedSeq = seq;
+  return true;
 }
 
 // keyPressed を gameMode で分岐
@@ -2010,10 +2079,9 @@ function keyPressed() {
       }
       return false;
     }
-    if (keyCode === LEFT_ARROW) onlineGuestKeyState.left = true;
-    else if (keyCode === RIGHT_ARROW) onlineGuestKeyState.right = true;
-    else if (keyCode === DOWN_ARROW) onlineGuestKeyState.down = true;
-    else if (keyCode === UP_ARROW) sendOnlineAction('rotateRight');
+    if (keyCode === LEFT_ARROW) sendOnlineAction('rotateRight');
+    else if (keyCode === RIGHT_ARROW || keyCode === UP_ARROW) sendOnlineAction('rotateLeft');
+    else if (keyCode === DOWN_ARROW) sendOnlineAction('rotateRight');
     else if (key === 'w' || key === 'W') sendOnlineAction('hardDrop');
     else if (key === 'c' || key === 'C') sendOnlineAction('hold');
     else if (key === 'p' || key === 'P') sendOnlineAction('pause');
@@ -2787,191 +2855,38 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
   }
 }
 
-/* ==========================================================
-   スマホ用タップ操作
-   ・タイトル画面: プレイモードをボタンで選択
-   ・ゲーム中: 直接ゲーム関数/オンライン操作を呼ぶ
-   ※既存のNEXT/HOLD/UI描画処理は変更しない
-   ========================================================== */
-(function addMobileTetrisControls() {
-  let modeWrap = null;
-  let gameWrap = null;
-
-  function styleButton(b, large=false) {
-    b.style.cssText =
-      'min-width:' + (large ? '120px' : '58px') + ';' +
-      'min-height:' + (large ? '50px' : '48px') + ';' +
-      'padding:7px 10px;font-size:' + (large ? '16px' : '17px') + 'px;' +
-      'font-weight:bold;border:1px solid #777;border-radius:8px;' +
-      'background:#eee;color:#111;touch-action:none;user-select:none;' +
-      '-webkit-user-select:none;box-sizing:border-box;';
-  }
-
-  function makeButton(label, onDown, onUp) {
+// ============================================================
+// スマホ用オンライン操作パネル
+// キーボードイベントを偽装せず、オンライン入力変数/アクションを直接送る。
+// ============================================================
+(function setupOnlineMobileControls() {
+  function makeButton(text, className, onDown, onUp) {
     const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    styleButton(b);
-
-    const down = e => {
-      e.preventDefault();
-      e.stopPropagation();
-      onDown();
-    };
-    const up = e => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (onUp) onUp();
-    };
-
-    b.addEventListener('pointerdown', down, {passive:false});
-    b.addEventListener('pointerup', up, {passive:false});
-    b.addEventListener('pointercancel', up, {passive:false});
-    b.addEventListener('touchstart', down, {passive:false});
-    b.addEventListener('touchend', up, {passive:false});
-    b.addEventListener('touchcancel', up, {passive:false});
+    b.textContent = text;
+    b.className = 'online-mobile-btn ' + className;
+    b.style.cssText = 'touch-action:none;user-select:none;-webkit-user-select:none;font-size:20px;font-weight:bold;min-width:58px;min-height:48px;border-radius:10px;border:1px solid #777;background:rgba(30,30,40,.9);color:white;';
+    const down = e => { e.preventDefault(); onDown(); };
+    const up = e => { e.preventDefault(); if (onUp) onUp(); };
+    b.addEventListener('pointerdown', down);
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
+    b.addEventListener('pointerleave', up);
     return b;
   }
-
-  function sendGuestState() {
-    if (typeof onlineRole !== 'undefined' && onlineRole === 2 &&
-        onlineSocket && onlineSocket.readyState === WebSocket.OPEN) {
-      try {
-        onlineSocket.send(JSON.stringify({
-          type:'inputState',
-          state:{
-            left:!!onlineGuestKeyState.left,
-            right:!!onlineGuestKeyState.right,
-            down:!!onlineGuestKeyState.down
-          }
-        }));
-      } catch (e) {}
-    }
+  function ensurePanel() {
+    if (document.getElementById('online-mobile-controls')) return;
+    const panel = document.createElement('div');
+    panel.id = 'online-mobile-controls';
+    panel.style.cssText = 'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:9999;display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;width:min(96vw,430px);padding:6px;box-sizing:border-box;pointer-events:auto;';
+    const setKey = (k,v) => { onlineGuestKeyState[k]=v; };
+    panel.appendChild(makeButton('←','left',()=>setKey('left',true),()=>setKey('left',false)));
+    panel.appendChild(makeButton('↓','down',()=>setKey('down',true),()=>setKey('down',false)));
+    panel.appendChild(makeButton('→','right',()=>setKey('right',true),()=>setKey('right',false)));
+    panel.appendChild(makeButton('↻','rotate',()=>sendOnlineAction('rotateRight')));
+    panel.appendChild(makeButton('DROP','drop',()=>sendOnlineAction('hardDrop')));
+    panel.appendChild(makeButton('HOLD','hold',()=>sendOnlineAction('hold')));
+    document.body.appendChild(panel);
   }
-
-  function setGuestMove(name, value) {
-    onlineGuestKeyState[name] = value;
-    sendGuestState();
-  }
-
-  function doAction(action) {
-    if (gameMode === 'ONLINE') {
-      if (onlineRole === 2) sendOnlineAction(action);
-      else if (onlineRole === 1) handleOnlineRemoteAction(action);
-      return;
-    }
-
-    if (action === 'rotateRight') rotateRight(1);
-    else if (action === 'rotateLeft') rotateLeft(1);
-    else if (action === 'hardDrop') hardDrop(1);
-    else if (action === 'hold') horudoSuru(1);
-    else if (action === 'pause' && countdownTime === 0) isPaused = !isPaused;
-  }
-
-  function makeModeButtons() {
-    if (modeWrap) return;
-
-    modeWrap = document.createElement('div');
-    modeWrap.id = 'mobile-tetris-mode-controls';
-    modeWrap.style.cssText =
-      'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);' +
-      'z-index:100000;width:min(96vw,560px);display:flex;flex-wrap:wrap;' +
-      'justify-content:center;gap:8px;padding:8px;box-sizing:border-box;' +
-      'touch-action:none;';
-
-    const modes = [
-      ['1P SOLO','SOLO'],
-      ['1P vs CPU','VS_CPU'],
-      ['1P vs 2P','VS_LOCAL'],
-      ['ONLINE','ONLINE']
-    ];
-
-    modes.forEach(([label, mode], index) => {
-      const b = makeButton(label, () => {
-        selectedButtonIndex = index;
-        if (mode === 'ONLINE') {
-          startOnlineMenu();
-        } else {
-          gameMode = mode;
-          nextRound();
-        }
-      });
-      styleButton(b, true);
-      modeWrap.appendChild(b);
-    });
-
-    document.body.appendChild(modeWrap);
-  }
-
-  function makeGameButtons() {
-    if (gameWrap) return;
-
-    gameWrap = document.createElement('div');
-    gameWrap.id = 'mobile-tetris-controls';
-    gameWrap.style.cssText =
-      'position:fixed;left:50%;bottom:8px;transform:translateX(-50%);' +
-      'z-index:99999;width:min(96vw,540px);display:flex;flex-wrap:wrap;' +
-      'justify-content:center;gap:6px;padding:6px;box-sizing:border-box;' +
-      'touch-action:none;';
-
-    const left = makeButton('←', () => {
-      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('left', true);
-      else if (gameMode === 'ONLINE') moveLeft(onlineRole === 1 ? 1 : 1);
-      else moveLeft(1);
-    }, () => {
-      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('left', false);
-    });
-
-    const down = makeButton('↓', () => {
-      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('down', true);
-      else if (gameMode === 'ONLINE') moveDown(onlineRole === 1 ? 1 : 1);
-      else moveDown(1);
-    }, () => {
-      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('down', false);
-    });
-
-    const right = makeButton('→', () => {
-      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('right', true);
-      else if (gameMode === 'ONLINE') moveRight(onlineRole === 1 ? 1 : 1);
-      else moveRight(1);
-    }, () => {
-      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('right', false);
-    });
-
-    gameWrap.appendChild(left);
-    gameWrap.appendChild(down);
-    gameWrap.appendChild(right);
-
-    [
-      ['↺','rotateLeft'],
-      ['↻','rotateRight'],
-      ['DROP','hardDrop'],
-      ['HOLD','hold'],
-      ['P','pause']
-    ].forEach(([label, action]) => {
-      gameWrap.appendChild(makeButton(label, () => doAction(action)));
-    });
-
-    document.body.appendChild(gameWrap);
-  }
-
-  function update() {
-    const title = (typeof gameMode !== 'undefined' && gameMode === 'TITLE');
-    if (modeWrap) modeWrap.style.display = title ? 'flex' : 'none';
-    if (gameWrap) gameWrap.style.display = title ? 'none' : 'flex';
-  }
-
-  function init() {
-    if (document.getElementById('mobile-tetris-mode-controls')) return;
-    makeModeButtons();
-    makeGameButtons();
-    update();
-    setInterval(update, 200);
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, {once:true});
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensurePanel);
+  else ensurePanel();
 })();
