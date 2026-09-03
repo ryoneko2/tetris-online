@@ -32,6 +32,7 @@ var onlineRole = 0; // 1 = ホスト(P1), 2 = ゲスト(P2)
 var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlineMatchStartRequested = false;
+const ONLINE_BUILD_VERSION = 'STARTFIX-20260903-4';
 var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
@@ -369,6 +370,7 @@ function drawOnlineFourPlayerScreen() {
   });
 
   noStroke(); fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${count} PLAYERS`,width/2,18);
+  textSize(9); fill(120); text(ONLINE_BUILD_VERSION,width/2,31);
   if(onlineStatus){fill(190);textSize(13);text(onlineStatus,width/2,height-18);}
 
   // カウントダウンもオンライン画面に重ねる
