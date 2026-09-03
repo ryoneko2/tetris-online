@@ -1341,7 +1341,7 @@ function handlePlayerInput() {
         }
        
         // --- ハードドロップ (W OR コントローラー上) ---
-        const isUpPressed = (axisY < -0.5 || dpadUp || keyIsDown(87)); // W 
+        const isUpPressed = (axisY < -0.5 || dpadUp); // キーボードWはwindow.keydownだけで処理 
         if (isUpPressed && !wasUpGamepadPressed) {
             hardDrop(1);
         }
