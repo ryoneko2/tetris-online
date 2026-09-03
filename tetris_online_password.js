@@ -339,19 +339,94 @@ function drawOnlineFourPlayerScreen() {
   background(18,18,30);
   const roles = [];
   for (let r=1; r<=onlinePlayerCount; r++) roles.push(r);
-  const cols = onlinePlayerCount <= 2 ? 2 : 2;
-  const rows = onlinePlayerCount <= 2 ? 1 : 2;
-  const gapX = 12, gapY = 18;
-  const cell = onlinePlayerCount <= 2 ? 22 : 17;
+  textAlign(CENTER, CENTER);
+
+  // 3人・4人では「自分を左に大きく、相手を右に縦並び」にする。
+  if (onlinePlayerCount >= 3) {
+    const opponents = roles.filter(r => r !== onlineRole);
+    const leftX = 28;
+    const leftY = 70;
+    const leftW = Math.min(width * 0.54, 420);
+    const leftCell = Math.max(10, Math.min(24, Math.floor(leftW / RETSU)));
+    const leftBW = RETSU * leftCell;
+    const leftBH = GYO * leftCell;
+    const rightX = Math.min(width * 0.60, leftX + leftBW + 34);
+    const rightW = Math.max(110, width - rightX - 24);
+    const rightCell = Math.max(7, Math.min(13, Math.floor(Math.min(rightW, 190) / RETSU)));
+    const rightBW = RETSU * rightCell;
+    const rightBH = GYO * rightCell;
+    const rightGap = 10;
+    const availableH = height - 88;
+    const cardH = Math.min(rightBH + 28, Math.max(70, Math.floor((availableH - rightGap * (opponents.length - 1)) / opponents.length)));
+
+    function getOnlineBoard(role) {
+      if (role === onlineRole) {
+        return {
+          board: role === 1 ? gameBoard : gameBoardP2,
+          block: role === 1 ? imaNoBurokku : imaNoBurokkuP2
+        };
+      }
+      const st = onlineRemoteStates[role];
+      return {
+        board: st && st.board ? st.board : Array.from({length:GYO},()=>new Array(RETSU).fill(0)),
+        block: st && st.block ? st.block : null
+      };
+    }
+
+    // 左：自分の盤面を大きく表示
+    const me = getOnlineBoard(onlineRole);
+    push();
+    translate(leftX, leftY);
+    fill(10,10,20,220); noStroke(); rect(0,0,leftBW,leftBH);
+    stroke(80); noFill(); rect(0,0,leftBW,leftBH);
+    for(let gx=0;gx<=RETSU;gx++) line(gx*leftCell,0,gx*leftCell,leftBH);
+    for(let gy=0;gy<=GYO;gy++) line(0,gy*leftCell,leftBW,gy*leftCell);
+    drawOnlineScaledBoard(me.board,leftCell);
+    if(me.block) drawOnlineScaledBlock(me.block,leftCell);
+    pop();
+    noStroke(); fill(255); textSize(22); text(`PLAYER ${onlineRole}`, leftX+leftBW/2, leftY-30);
+
+    // 右：相手の盤面だけを縦に並べ、各盤面の上にPLAYER番号だけ表示
+    const rightStartY = 48;
+    for(let i=0;i<opponents.length;i++) {
+      const role = opponents[i];
+      const st = getOnlineBoard(role);
+      const cardY = rightStartY + i * (cardH + rightGap);
+      const boardX = rightX + Math.max(0, (rightW-rightBW)/2);
+      const boardY = cardY + 24;
+      fill(255); textSize(15); text(`PLAYER ${role}`, boardX+rightBW/2, cardY+10);
+      push();
+      translate(boardX, boardY);
+      fill(10,10,20,220); noStroke(); rect(0,0,rightBW,rightBH);
+      stroke(70); noFill(); rect(0,0,rightBW,rightBH);
+      for(let gx=0;gx<=RETSU;gx++) line(gx*rightCell,0,gx*rightCell,rightBH);
+      for(let gy=0;gy<=GYO;gy++) line(0,gy*rightCell,rightBW,gy*rightCell);
+      drawOnlineScaledBoard(st.board,rightCell);
+      if(st.block) drawOnlineScaledBlock(st.block,rightCell);
+      pop();
+    }
+
+    // 3/4人UIでは、盤面以外の情報を極力出さずゲーム画面を優先。
+    if (isRoundOver) {
+      fill(0,0,0,175); rect(0,0,width,height);
+      fill(255); textSize(28);
+      if (isMatchOver && onlineMatchWinnerRole) text(`PLAYER ${onlineMatchWinnerRole} WINS MATCH!`,width/2,height/2-20);
+      else if (onlineRoundWinnerRole) text(`PLAYER ${onlineRoundWinnerRole} WINS ROUND!`,width/2,height/2-20);
+      textSize(17); text('Rotate / A / C で次へ',width/2,height/2+25);
+    }
+    return;
+  }
+
+  // 2人時は従来の左右2画面UIを維持
+  const cols = 2;
+  const gapX = 12;
+  const cell = 22;
   const bw = RETSU * cell, bh = GYO * cell;
-  const totalW = cols * bw + (cols-1)*gapX;
+  const totalW = cols * bw + gapX;
   const startX = (width-totalW)/2;
   const topY = 52;
-  textAlign(CENTER, CENTER);
-  textSize(16);
   for (let i=0;i<roles.length;i++) {
-    const role=roles[i], col=i%cols, row=floor(i/cols);
-    const x=startX+col*(bw+gapX), y=topY+row*(bh+58+gapY);
+    const role=roles[i], x=startX+i*(bw+gapX), y=topY;
     const local = role===onlineRole;
     let board, block;
     if (local) {
@@ -366,16 +441,12 @@ function drawOnlineFourPlayerScreen() {
     translate(x,y);
     fill(10,10,20,220); noStroke(); rect(0,0,bw,bh);
     stroke(80); noFill(); rect(0,0,bw,bh);
-    for(let gx=0;gx<=RETSU;gx++){ line(gx*cell,0,gx*cell,bh); }
-    for(let gy=0;gy<=GYO;gy++){ line(0,gy*cell,bw,gy*cell); }
+    for(let gx=0;gx<=RETSU;gx++) line(gx*cell,0,gx*cell,bh);
+    for(let gy=0;gy<=GYO;gy++) line(0,gy*cell,bw,gy*cell);
     drawOnlineScaledBoard(board,cell);
     if(block) drawOnlineScaledBlock(block,cell);
     pop();
-    noStroke(); fill(local?255:210); text(`PLAYER ${role}${local?'  YOU':''}`, x+bw/2, y-20);
-    const st=local ? null : onlineRemoteStates[role];
-    const score=local ? (role===1?sukoa:cpuScore) : (st?Number(st.score)||0:0);
-    const alive=local ? !isRoundOver : !!(onlineAlive[role] !== false);
-    fill(220); text(`${alive?'ONLINE':'OUT'}   SCORE ${score}`, x+bw/2, y+bh+20);
+    noStroke(); fill(local?255:210); textSize(16); text(`PLAYER ${role}${local?'  YOU':''}`, x+bw/2, y-20);
   }
   fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${onlinePlayerCount} PLAYERS`, width/2, 18);
   if (onlineStatus) { textSize(13); fill(190); text(onlineStatus,width/2,height-18); }
@@ -387,6 +458,7 @@ function drawOnlineFourPlayerScreen() {
     textSize(17); text('Rotate / A / C で次へ',width/2,height/2+25);
   }
 }
+
 function drawOnlineScaledBoard(board,cell) {
   if(!Array.isArray(board)) return;
   for(let y=0;y<GYO;y++) for(let x=0;x<RETSU;x++) if(board[y] && board[y][x]) {
@@ -1942,7 +2014,10 @@ function connectOnlineSocket(action) {
 
     if (msg.type === 'roomStatus') {
       onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount;
-      onlineStatus = `参加者 ${Number(msg.count)||0}/${onlinePlayerCount}人`;
+      const joinedCount = Number(msg.count) || 0;
+      onlineStatus = joinedCount >= onlinePlayerCount
+        ? '人数がそろいました。対戦を開始しています...'
+        : `参加者 ${joinedCount}/${onlinePlayerCount}人`;
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || onlineAlive || {};
       return;
