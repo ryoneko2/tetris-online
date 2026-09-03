@@ -334,6 +334,107 @@ function setup() {
   restartGame();
 }
 
+// オンライン/通常共通のメイン描画ループ
+function draw() {
+  background(30, 30, 50);
+
+  if (gameMode === 'TITLE') {
+    drawTitleScreen();
+    handlePlayerInput();
+    return;
+  }
+
+  // 3/4人オンラインは専用レイアウト、それ以外は従来UI
+  if (gameMode === 'ONLINE') {
+    drawOnlineFourPlayerScreen();
+
+    if (isMatchOver) {
+      drawMatchOverScreen();
+    } else if (isRoundOver) {
+      // オンライン専用の終了表示はdrawOnlineFourPlayerScreen側で表示
+    } else if (countdownTime > 0) {
+      drawCountdown();
+    } else if (isPaused) {
+      drawPauseScreen();
+    } else if (isStarted) {
+      // 全プレイヤーが自分の端末でP1エンジンを動かす。
+      // これによりPLAYER 2～4でも自然落下・左右移動・S/W・回転・HOLDが動く。
+      handlePlayerInput();
+
+      if (isLanded && lockDelayTimer > 0 && millis() > lockDelayTimer) {
+        hardDrop(1);
+      } else if (!isLanded && frameCount % framesPerDrop === 0) {
+        const gp = navigator.getGamepads()[0];
+        const soft = !!onlineGuestKeyState.down || keyIsDown(83) ||
+          (gp && (gp.axes[1] > 0.5 || gp.buttons[13].pressed));
+        if (!soft) moveDown(1);
+      }
+
+      // ローカルの最新盤面を全員へ同期
+      sendLocalOnlineState(false);
+    }
+    return;
+  }
+
+  // 従来のローカル/CPU画面
+  drawUI();
+
+  push();
+  translate(P1_BOARD_X_OFFSET, 0);
+  drawGrid();
+  drawGameBoard(gameBoard, 0);
+  drawImaNoBurokku(imaNoBurokku, 0);
+  pop();
+
+  if (gameMode === 'VS_CPU' || gameMode === 'VS_LOCAL') {
+    push();
+    translate(P2_BOARD_X_OFFSET, 0);
+    drawGrid();
+    drawGameBoard(gameBoardP2, 0);
+    drawImaNoBurokku(imaNoBurokkuP2, 0);
+    pop();
+  }
+
+  if (isMatchOver) {
+    drawMatchOverScreen();
+    handlePlayerInput();
+    if (gameMode === 'VS_LOCAL') handlePlayer2Input();
+  } else if (isRoundOver) {
+    drawRoundOverScreen();
+    handlePlayerInput();
+    if (gameMode === 'VS_LOCAL') handlePlayer2Input();
+  } else if (countdownTime > 0) {
+    drawCountdown();
+    handlePlayerInput();
+    if (gameMode === 'VS_LOCAL') handlePlayer2Input();
+  } else if (isPaused) {
+    drawPauseScreen();
+    handlePlayerInput();
+    if (gameMode === 'VS_LOCAL') handlePlayer2Input();
+  } else if (isStarted) {
+    handlePlayerInput();
+
+    if (isLanded && lockDelayTimer > 0 && millis() > lockDelayTimer) {
+      hardDrop(1);
+    } else if (!isLanded && frameCount % framesPerDrop === 0) {
+      const gp = navigator.getGamepads()[0];
+      const soft = !!keyIsDown(83) || (gp && (gp.axes[1] > 0.5 || gp.buttons[13].pressed));
+      if (!soft) moveDown(1);
+    }
+
+    if (gameMode === 'VS_CPU') {
+      if (frameCount % 5 === 0) cpuTurn();
+    } else if (gameMode === 'VS_LOCAL') {
+      handlePlayer2Input();
+      if (isLandedP2 && lockDelayTimerP2 > 0 && millis() > lockDelayTimerP2) {
+        hardDrop(2);
+      } else if (!isLandedP2 && frameCount % framesPerDrop === 0 && !keyIsDown(83)) {
+        moveDown(2);
+      }
+    }
+  }
+}
+
 // ▼▼▼ 修正点 3 (テトリス25): draw() の translate() を修正 ▼▼▼
 function drawOnlineFourPlayerScreen() {
   background(18,18,30);
