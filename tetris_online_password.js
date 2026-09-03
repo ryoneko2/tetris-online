@@ -1937,8 +1937,16 @@ function startOnlineMenu() {
       return;
     }
 
+    let count = prompt('この部屋は何人対戦ですか？\n\nホストに確認して 2 / 3 / 4 のいずれかを入力してください。', '3');
+    if (count === null) return;
+    count = Number(count.trim());
+    if (![2,3,4].includes(count)) {
+      alert('人数は2、3、4のいずれかです。');
+      return;
+    }
+
     onlineRole = 0;
-    onlinePlayerCount = 2;
+    onlinePlayerCount = count;
     onlineRoom = password;
     onlineStatus = '部屋に参加中...';
     connectOnlineSocket('join');
