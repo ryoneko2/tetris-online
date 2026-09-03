@@ -68,9 +68,13 @@ wss.on('connection',ws=>{
       send(ws,{type:'roomJoined',role,room:password,password,playerCount:room.playerCount,...snapshot(room)});
       broadcast(room,roomStatus(room));
       console.log(`ルーム参加: ${password} PLAYER ${role} (${room.players.length}/${room.playerCount})`);
-      if(room.players.length===room.playerCount){
+      if(room.players.length===room.playerCount && !room.started){
         room.started=true; room.roundOver=false; for(const p of room.players)p.alive=true;
-        const st=snapshot(room); for(const p of room.players) send(p.ws,{type:'start',playerCount:room.playerCount,...st});
+        const st=snapshot(room);
+        for(const p of room.players){
+          send(p.ws,{type:'roomStatus',playerCount:room.playerCount,count:room.players.length,...st});
+          send(p.ws,{type:'start',playerCount:room.playerCount,...st});
+        }
         console.log(`対戦開始: ${password}`);
       }
       return;
