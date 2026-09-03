@@ -29,6 +29,14 @@ var gameCanvas = null;
 const ONLINE_SERVER_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
 var onlineSocket = null;
 var onlineRole = 0; // 1 = ホスト(P1), 2 = ゲスト(P2)
+var onlinePlayerCount = 2;
+var onlineRemoteStates = {};
+var onlineScores = {};
+var onlineAlive = {};
+var onlineRoundWinnerRole = 0;
+var onlineMatchWinnerRole = 0;
+var onlineRoundReadySent = false;
+var onlineLastLocalStateSend = 0;
 var onlineRoom = '';
 var onlineConnected = false;
 var onlineOpponentConnected = false;
@@ -327,14 +335,96 @@ function setup() {
 }
 
 // ▼▼▼ 修正点 3 (テトリス25): draw() の translate() を修正 ▼▼▼
-function draw() {
-  // 全体の背景色
-  background(30, 30, 50); 
+function drawOnlineFourPlayerScreen() {
+  background(18,18,30);
+  const roles = [];
+  for (let r=1; r<=onlinePlayerCount; r++) roles.push(r);
+  const cols = onlinePlayerCount <= 2 ? 2 : 2;
+  const rows = onlinePlayerCount <= 2 ? 1 : 2;
+  const gapX = 12, gapY = 18;
+  const cell = onlinePlayerCount <= 2 ? 22 : 17;
+  const bw = RETSU * cell, bh = GYO * cell;
+  const totalW = cols * bw + (cols-1)*gapX;
+  const startX = (width-totalW)/2;
+  const topY = 52;
+  textAlign(CENTER, CENTER);
+  textSize(16);
+  for (let i=0;i<roles.length;i++) {
+    const role=roles[i], col=i%cols, row=floor(i/cols);
+    const x=startX+col*(bw+gapX), y=topY+row*(bh+58+gapY);
+    const local = role===onlineRole;
+    let board, block;
+    if (local) {
+      board = role===1 ? gameBoard : gameBoardP2;
+      block = role===1 ? imaNoBurokku : imaNoBurokkuP2;
+    } else {
+      const st=onlineRemoteStates[role];
+      board=st && st.board ? st.board : Array.from({length:GYO},()=>new Array(RETSU).fill(0));
+      block=st && st.block ? st.block : null;
+    }
+    push();
+    translate(x,y);
+    fill(10,10,20,220); noStroke(); rect(0,0,bw,bh);
+    stroke(80); noFill(); rect(0,0,bw,bh);
+    for(let gx=0;gx<=RETSU;gx++){ line(gx*cell,0,gx*cell,bh); }
+    for(let gy=0;gy<=GYO;gy++){ line(0,gy*cell,bw,gy*cell); }
+    drawOnlineScaledBoard(board,cell);
+    if(block) drawOnlineScaledBlock(block,cell);
+    pop();
+    noStroke(); fill(local?255:210); text(`PLAYER ${role}${local?'  YOU':''}`, x+bw/2, y-20);
+    const st=local ? null : onlineRemoteStates[role];
+    const score=local ? (role===1?sukoa:cpuScore) : (st?Number(st.score)||0:0);
+    const alive=local ? !isRoundOver : !!(onlineAlive[role] !== false);
+    fill(220); text(`${alive?'ONLINE':'OUT'}   SCORE ${score}`, x+bw/2, y+bh+20);
+  }
+  fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${onlinePlayerCount} PLAYERS`, width/2, 18);
+  if (onlineStatus) { textSize(13); fill(190); text(onlineStatus,width/2,height-18); }
+  if (isRoundOver) {
+    fill(0,0,0,175); rect(0,0,width,height);
+    fill(255); textSize(28);
+    if (isMatchOver && onlineMatchWinnerRole) text(`PLAYER ${onlineMatchWinnerRole} WINS MATCH!`,width/2,height/2-20);
+    else if (onlineRoundWinnerRole) text(`PLAYER ${onlineRoundWinnerRole} WINS ROUND!`,width/2,height/2-20);
+    textSize(17); text('Rotate / A / C で次へ',width/2,height/2+25);
+  }
+}
+function drawOnlineScaledBoard(board,cell) {
+  if(!Array.isArray(board)) return;
+  for(let y=0;y<GYO;y++) for(let x=0;x<RETSU;x++) if(board[y] && board[y][x]) {
+    fill(burokkuIro[board[y][x]-1] || 120); noStroke(); rect(x*cell,y*cell,cell-1,cell-1);
+  }
+}
+function drawOnlineScaledBlock(block,cell) {
+  if(!block || !Array.isArray(block.shape)) return;
+  const type=Number(block.type)||0;
+  const c=burokkuIro[type]; fill(c || 180); noStroke();
+  for(let y=0;y<block.shape.length;y++) for(let x=0;x<block.shape[y].length;x++) if(block.shape[y][x]) {
+    const bx=(Number(block.x)+x)*cell, by=(Number(block.y)+y)*cell;
+    if(by+cell>0) rect(bx,by,cell-1,cell-1);
+  }
+}
 
-  if (gameMode === 'TITLE') {
-    drawTitleScreen();
-    handlePlayerInput(); 
-    return; 
+function draw() {
+  background(30, 30, 50);
+  if (gameMode === 'TITLE') { drawTitleScreen(); handlePlayerInput(); return; }
+
+  if (gameMode === 'ONLINE') {
+    drawOnlineFourPlayerScreen();
+    if (onlineRole >= 2) {
+      handleOnlineGuestInput();
+      if (!isMatchOver && !isRoundOver && countdownTime === 0 && !isPaused && isStarted) {
+        handleOnlineHostP2Input();
+        if (isLandedP2 && lockDelayTimerP2 > 0 && millis() > lockDelayTimerP2) hardDrop(2);
+        else if (!isLandedP2 && frameCount % framesPerDrop === 0 && !onlineGuestKeyState.down) moveDown(2);
+      }
+    } else if (onlineRole === 1) {
+      if (!isMatchOver && !isRoundOver && countdownTime === 0 && !isPaused && isStarted) {
+        handlePlayerInput();
+        if (isLanded && lockDelayTimer > 0 && millis() > lockDelayTimer) hardDrop(1);
+        else if (!isLanded && frameCount % framesPerDrop === 0) moveDown(1);
+      }
+    }
+    sendLocalOnlineState(false);
+    return;
   }
 
   // 1. UIは常に描画
@@ -360,7 +450,7 @@ function draw() {
  
   // 4. オンラインのゲスト(P2)は「自分の操作・自分の表示」を最優先。
   // 入力は即座にローカルP2へ反映し、同じ入力をホストへ送る。
-  if (gameMode === 'ONLINE' && onlineRole === 2) {
+  if (gameMode === 'ONLINE' && onlineRole >= 2) {
     handleOnlineGuestInput();
     if (isMatchOver) {
       drawMatchOverScreen();
@@ -1371,7 +1461,7 @@ function touchStarted(event) {
 }
 
 function keyReleased() {
-  if (gameMode === 'ONLINE' && onlineRole === 2) {
+  if (gameMode === 'ONLINE' && onlineRole >= 2) {
     if (key === 'a' || key === 'A') onlineGuestKeyState.left = false;
     else if (key === 'd' || key === 'D') onlineGuestKeyState.right = false;
     else if (key === 's' || key === 'S') onlineGuestKeyState.down = false;
@@ -1718,21 +1808,16 @@ function koteiBurokku(playerIndex) {
 // アタックゲージに溜まった攻撃を送る
 function sendAttack(playerIndex) {
     let attackToSend = 0;
-    let opponentAttackQueue = null;
+    if (playerIndex === 1) { attackToSend = attackPower; attackPower = 0; }
+    else { attackToSend = cpuAttackPower; cpuAttackPower = 0; }
+    if (attackToSend <= 0) return;
 
-    if (playerIndex === 1) {
-        attackToSend = attackPower;
-        attackPower = 0;
-        opponentAttackQueue = player2AttackQueue;
-    } else { // P2 または CPU
-        attackToSend = cpuAttackPower;
-        cpuAttackPower = 0;
-        opponentAttackQueue = playerAttackQueue;
+    if (gameMode === 'ONLINE') {
+      sendOnlineAction('attack', { amount: Math.max(0, Math.min(40, attackToSend)) });
+      return;
     }
-
-    if (attackToSend > 0) {
-        opponentAttackQueue.push(attackToSend);
-    }
+    if (playerIndex === 1) player2AttackQueue.push(attackToSend);
+    else playerAttackQueue.push(attackToSend);
 }
 
 // addGarbageLines の敗北判定修正
@@ -1782,6 +1867,14 @@ function startOnlineMenu() {
   if (mode === null) return;
 
   if (mode.trim() === '1') {
+    let count = prompt('何人対戦にしますか？\n\n2 / 3 / 4 のいずれかを入力してください。', '4');
+    if (count === null) return;
+    count = Number(count.trim());
+    if (![2,3,4].includes(count)) {
+      alert('人数は2、3、4のいずれかです。');
+      return;
+    }
+    onlinePlayerCount = count;
     onlineRole = 0;
     onlineRoom = makeOnlinePassword();
     onlineStatus = '部屋を作成中...';
@@ -1800,6 +1893,7 @@ function startOnlineMenu() {
     }
 
     onlineRole = 0;
+    onlinePlayerCount = 2;
     onlineRoom = password;
     onlineStatus = '部屋に参加中...';
     connectOnlineSocket('join');
@@ -1822,7 +1916,8 @@ function connectOnlineSocket(action) {
     onlineStatus = action === 'create' ? '部屋を作成中...' : 'パスワードを確認中...';
     onlineSocket.send(JSON.stringify({
       type: action,
-      password: onlineRoom
+      password: onlineRoom,
+      playerCount: onlinePlayerCount
     }));
   };
 
@@ -1831,74 +1926,108 @@ function connectOnlineSocket(action) {
     try { msg = JSON.parse(event.data); } catch (e) { return; }
 
     if (msg.type === 'roomJoined') {
-      onlineRole = msg.role;
+      onlineRole = Number(msg.role) || 0;
+      onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount || 2;
       onlineRoom = String(msg.password || msg.room || onlineRoom);
-
+      onlineScores = msg.scores || onlineScores || {};
+      onlineAlive = msg.alive || onlineAlive || {};
       if (onlineRole === 1) {
-        onlineStatus = '相手を待っています...';
-        alert('部屋を作りました！\n\n対戦パスワード：' + onlineRoom + '\n\nこの6桁の数字を相手に伝えてください。');
+        onlineStatus = `部屋を作りました。${onlinePlayerCount}人そろうまで待っています...`;
+        alert('部屋を作りました！\n\n対戦パスワード：' + onlineRoom + '\n\n' + onlinePlayerCount + '人対戦です。\nこの6桁の数字を参加者に伝えてください。');
       } else {
-        onlineStatus = 'ホストを待っています...';
+        onlineStatus = '参加しました。メンバーがそろうまで待っています...';
       }
       return;
     }
 
-    if (msg.type === 'peerJoined') {
-      onlineOpponentConnected = true;
-      if (onlineRole === 1) {
-        gameMode = 'ONLINE';
-        restartGame();
-        gameMode = 'ONLINE';
-        nextRound();
-        onlineStatus = '対戦開始！';
-        onlineInitialStateSent = false;
-        sendOnlineState(true);
-      }
+    if (msg.type === 'roomStatus') {
+      onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount;
+      onlineStatus = `参加者 ${Number(msg.count)||0}/${onlinePlayerCount}人`;
+      onlineScores = msg.scores || onlineScores || {};
+      onlineAlive = msg.alive || onlineAlive || {};
       return;
     }
 
     if (msg.type === 'start') {
-      onlineOpponentConnected = true;
-      if (onlineRole === 2) {
-        gameMode = 'ONLINE';
-        onlineGuestInitialized = false;
-        onlineLastAppliedSeq = 0;
-        onlineStatus = '対戦開始！';
-      }
+      onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount || 2;
+      onlineScores = msg.scores || {};
+      onlineAlive = msg.alive || {};
+      onlineRoundWinnerRole = 0;
+      onlineMatchWinnerRole = 0;
+      onlineRemoteStates = {};
+      onlineRoundReadySent = false;
+      gameMode = 'ONLINE';
+      onlineGuestInitialized = false;
+      onlineLastAppliedSeq = 0;
+      onlineInitialStateSent = false;
+      restartGame();
+      gameMode = 'ONLINE';
+      nextRound();
+      onlineStatus = '対戦開始！';
+      sendLocalOnlineState(true);
       return;
     }
 
-    if (msg.type === 'state') {
-      if (onlineRole === 2 && msg.state && typeof msg.state === 'object') {
-        const seq = Number(msg.state.seq || 0);
-        if (!seq || seq > onlineLastAppliedSeq) {
-          // ゲスト側は受信した最新状態を即時反映。
-          // ここで待ち時間を入れると、ゲストの操作が「ホストに合わせて遅れて動く」原因になる。
-          onlinePendingState = null;
-          if (onlineStateApplyTimer) { clearTimeout(onlineStateApplyTimer); onlineStateApplyTimer = null; }
-          applyOnlineState(msg.state);
+    if (msg.type === 'playerState') {
+      const role = Number(msg.player);
+      if (role >= 1 && role <= 4 && role !== onlineRole && msg.state && typeof msg.state === 'object') {
+        if (isValidOnlineBoard(msg.state.board) && isValidOnlineBlock(msg.state.block)) {
+          onlineRemoteStates[role] = msg.state;
         }
       }
       return;
     }
 
-    if (msg.type === 'remoteAction' && onlineRole === 1) {
-      handleOnlineRemoteAction(msg.action);
+    if (msg.type === 'attack') {
+      const amount = Math.max(0, Math.min(40, Number(msg.amount) || 0));
+      if (amount > 0) {
+        if (onlineRole === 1) playerAttackQueue.push(amount);
+        else player2AttackQueue.push(amount);
+      }
       return;
     }
 
-    if (msg.type === 'remoteInputState' && onlineRole === 1) {
-      onlineGuestKeyState = {
-        left: !!(msg.state && msg.state.left),
-        right: !!(msg.state && msg.state.right),
-        down: !!(msg.state && msg.state.down)
-      };
+    if (msg.type === 'playerDead') {
+      const role = Number(msg.player);
+      if (role >= 1 && role <= 4) onlineAlive[role] = false;
+      return;
+    }
+
+    if (msg.type === 'roundOver') {
+      onlineRoundWinnerRole = Number(msg.winner) || 0;
+      onlineScores = msg.scores || onlineScores || {};
+      onlineAlive = msg.alive || onlineAlive || {};
+      isRoundOver = true;
+      isMatchOver = !!msg.matchOver;
+      onlineMatchWinnerRole = Number(msg.matchWinner) || 0;
+      roundWinner = onlineRoundWinnerRole ? `PLAYER${onlineRoundWinnerRole}` : '';
+      onlineRoundReadySent = false;
+      return;
+    }
+
+    if (msg.type === 'startRound') {
+      onlineScores = msg.scores || onlineScores || {};
+      onlineAlive = msg.alive || {};
+      onlineRoundWinnerRole = 0;
+      onlineRoundReadySent = false;
+      isMatchOver = false;
+      gameMode = 'ONLINE';
+      nextRound();
+      sendLocalOnlineState(true);
+      return;
+    }
+
+    if (msg.type === 'matchOver') {
+      onlineScores = msg.scores || onlineScores || {};
+      onlineMatchWinnerRole = Number(msg.winner) || 0;
+      isMatchOver = true;
+      isRoundOver = true;
       return;
     }
 
     if (msg.type === 'peerLeft') {
       onlineOpponentConnected = false;
-      onlineStatus = '相手が切断しました';
+      onlineStatus = '参加者が切断しました';
       if (gameMode === 'ONLINE') isPaused = true;
       return;
     }
@@ -1924,18 +2053,48 @@ function connectOnlineSocket(action) {
   };
 }
 
-function sendOnlineAction(action) {
-  if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
+function sendOnlineAction(action, extra = {}) {
+  if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole < 1) return;
   if (onlineSocket.bufferedAmount > 64 * 1024) return;
-  try { onlineSocket.send(JSON.stringify({ type:'input', action:action })); } catch (e) {}
+  try { onlineSocket.send(JSON.stringify({ type:'input', action:action, ...extra })); } catch (e) {}
+}
+
+function serializeLocalOnlinePlayerState() {
+  const isHost = onlineRole === 1;
+  const board = isHost ? gameBoard : gameBoardP2;
+  const block = isHost ? imaNoBurokku : imaNoBurokkuP2;
+  return {
+    board: cloneOnlineValue(board),
+    block: cloneOnlineValue(block),
+    score: isHost ? sukoa : cpuScore,
+    attack: isHost ? attackPower : cpuAttackPower,
+    backToBack: isHost ? backToBack : cpuBackToBack,
+    combo: isHost ? comboCount : cpuComboCount,
+    hold: isHost ? horudoBurokku : cpuHoldBlock,
+    queue: cloneOnlineValue(isHost ? playerAttackQueue : player2AttackQueue),
+    alive: !isRoundOver,
+    wins: Number(onlineScores[onlineRole] || 0)
+  };
+}
+
+function sendLocalOnlineState(force=false) {
+  if (onlineRole < 1 || !onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
+  const now = millis();
+  if (!force && now - onlineLastLocalStateSend < 120) return;
+  if (onlineSocket.bufferedAmount > 128 * 1024) return;
+  const state = serializeLocalOnlinePlayerState();
+  if (!isValidOnlineBoard(state.board) || !isValidOnlineBlock(state.block)) return;
+  onlineLastLocalStateSend = now;
+  try {
+    onlineSocket.send(JSON.stringify({ type:'playerState', player:onlineRole, state }));
+  } catch (e) {}
 }
 
 function handleOnlineGuestInput() {
-  if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
+  if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole < 2) return;
   const now = millis();
   if (now - onlineLastInputSend < 10) return;
   onlineLastInputSend = now;
-
   if (onlineSocket.bufferedAmount > 64 * 1024) return;
   try {
     onlineSocket.send(JSON.stringify({
@@ -2113,7 +2272,7 @@ function applyOnlineState(s) {
 
   // ゲストは自分のP2をローカルで動かす。P2情報は最初の同期時だけ必要。
   if (!isValidOnlineBoard(s.gameBoard)) return false;
-  const keepGuestP2 = (onlineRole === 2 && onlineGuestInitialized);
+  const keepGuestP2 = (onlineRole >= 2 && onlineGuestInitialized);
   if (!keepGuestP2 && (!isValidOnlineBoard(s.gameBoardP2) || !isValidOnlineBlock(s.imaNoBurokkuP2))) return false;
   const localP2 = keepGuestP2 ? {
     gameBoardP2, imaNoBurokkuP2, cpuScore, cpuAttackPower, cpuBackToBack, cpuComboCount,
@@ -2202,9 +2361,9 @@ function applyOnlineState(s) {
 // keyPressed を gameMode で分岐
 function keyPressed() {
   // オンラインのゲストは入力をローカルP2へ即時反映し、同じ操作をホストへ送る。
-  if (gameMode === 'ONLINE' && onlineRole === 2) {
+  if (gameMode === 'ONLINE' && onlineRole >= 2) {
     if (isRoundOver || isMatchOver) {
-      if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW || key === 'w' || key === 'W' || key === 'a' || key === 'A') sendOnlineAction('nextRound');
+      if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW || key === 'w' || key === 'W' || key === 'a' || key === 'A' || key === 'c' || key === 'C') sendOnlineAction('nextRound');
       return false;
     }
     // 元の操作系を維持：A=左 / D=右 / S=下 / W=ハードドロップ、矢印=回転
@@ -2677,32 +2836,26 @@ function nextRound() {
 
 // ▼▼▼ 修正点 14 (テトリス23): handleRoundOver() の勝者判定を変更 ▼▼▼
 function handleRoundOver(loser) { // 'PLAYER1', 'PLAYER2', 'CPU', または 'SOLO_END'
-  if (isRoundOver) return; 
-  
+  if (isRoundOver) return;
   isRoundOver = true;
-  
-  if (gameMode === 'SOLO') {
-      isMatchOver = true; 
-      roundWinner = 'SOLO_END';
-      return;
+  if (gameMode === 'SOLO') { isMatchOver = true; roundWinner = 'SOLO_END'; return; }
+
+  if (gameMode === 'ONLINE') {
+    onlineStatus = '脱落しました。ほかのプレイヤーを待っています...';
+    onlineAlive[onlineRole] = false;
+    sendOnlineAction('playerDead');
+    sendLocalOnlineState(true);
+    return;
   }
-  
+
   if (loser === 'PLAYER1') {
-      p2Wins++; // P2またはCPUの勝利
+      p2Wins++;
       roundWinner = (gameMode === 'VS_CPU') ? 'CPU' : 'PLAYER2';
-  } else { // P2 または CPU が負け
+  } else {
       playerWins++;
       roundWinner = 'PLAYER1';
   }
-  
-  // マッチ終了判定
-  if (playerWins >= MATCH_WIN_COUNT || p2Wins >= MATCH_WIN_COUNT) {
-      isMatchOver = true;
-  }
-
-  if (gameMode === 'ONLINE' && onlineRole === 1) {
-    sendOnlineState(true);
-  }
+  if (playerWins >= MATCH_WIN_COUNT || p2Wins >= MATCH_WIN_COUNT) isMatchOver = true;
 }
 // ▲▲▲
 
@@ -3043,7 +3196,7 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
 
     // オンラインのゲストになった時だけ操作パネルを表示する。
     const updateVisibility = () => {
-      const isOnlineGuest = (typeof gameMode !== 'undefined' && gameMode === 'ONLINE' && typeof onlineRole !== 'undefined' && onlineRole === 2);
+      const isOnlineGuest = (typeof gameMode !== 'undefined' && gameMode === 'ONLINE' && typeof onlineRole !== 'undefined' && onlineRole >= 2);
       panel.style.display = isOnlineGuest ? 'flex' : 'none';
       // 非表示中はタッチを完全に下のキャンバスへ通す。
       panel.style.pointerEvents = isOnlineGuest ? 'auto' : 'none';
