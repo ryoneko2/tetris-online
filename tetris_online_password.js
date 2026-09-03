@@ -2242,11 +2242,14 @@ function connectOnlineSocket(action) {
       onlinePlayerNames = msg.names || onlinePlayerNames || {};
       onlineRoundWinnerRole = 0;
       onlineRoundReadySent = false;
+      onlineRoundRequestSent = false;
       isMatchOver = false;
       isRoundOver = false;
       isPaused = false;
+      isStarted = false;
       countdownTime = 0;
       gameMode = 'ONLINE';
+      onlineRemoteStates = {};
       nextRound();
       sendLocalOnlineState(true);
       return;
@@ -2326,6 +2329,18 @@ function sendOnlineAction(action, extra = {}) {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole < 1) return;
   if (onlineSocket.bufferedAmount > 64 * 1024) return;
   try { onlineSocket.send(JSON.stringify({ type:'input', action:action, ...extra })); } catch (e) {}
+}
+
+// ラウンド終了後の開始要求。通信の取りこぼしに備えて短時間だけ再送する。
+function requestOnlineNextRound() {
+  if (isMatchOver || !isRoundOver || onlineRole < 1) return;
+  onlineRoundRequestSent = true;
+  const sendRequest = () => {
+    if (isMatchOver || !isRoundOver) return;
+    sendOnlineAction('nextRound');
+  };
+  sendRequest();
+  [250, 600, 1200].forEach(ms => setTimeout(sendRequest, ms));
 }
 
 function serializeLocalOnlinePlayerState() {
@@ -3453,7 +3468,7 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
 
     // ラウンド終了：指定された操作のいずれかで全員の次ラウンド開始を要求。
     if(isRoundOver && !isMatchOver) {
-      if(isControlKey && !e.repeat) sendOnlineAction('nextRound');
+      if(isControlKey && !e.repeat) requestOnlineNextRound();
       return;
     }
 
