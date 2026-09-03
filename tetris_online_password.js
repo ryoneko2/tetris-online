@@ -188,7 +188,14 @@ const I_KICK_DATA = [
 
 function setup() {
   // ▼▼▼ 修正点 2 (テトリス25): キャンバスサイズを変更 (36 * 22 = 792) ▼▼▼
-  createCanvas(TOTAL_WIDTH_RETSU * BLOKU_SAIZU, 810); 
+  const canvas = createCanvas(TOTAL_WIDTH_RETSU * BLOKU_SAIZU, 810);
+  // スマホのタッチをブラウザのスクロール/ズームとして処理させず、
+  // p5.js の touchStarted() に確実に渡す。
+  if (canvas && canvas.elt) {
+    canvas.elt.style.touchAction = 'none';
+    canvas.elt.style.webkitUserSelect = 'none';
+    canvas.elt.style.userSelect = 'none';
+  }
  
   // ブロックの形状データ
   burokkuShurui = [
@@ -1273,28 +1280,43 @@ function handlePlayer2Input() {
 
 
 
-// モード選択のクリック処理
-function mousePressed() {
-  if (gameMode === 'TITLE') {
-    let btnWidth = 250;
-    let btnHeight = 50;
-    let btnX = (width - btnWidth) / 2;
+// モード選択のクリック/タッチ処理
+function handleTitlePointer(px, py) {
+  if (gameMode !== 'TITLE') return false;
 
-    for (let i = 0; i < titleButtons.length; i++) {
-        let btn = titleButtons[i];
-        if (mouseX > btnX && mouseX < btnX + btnWidth && mouseY > btn.y && mouseY < btn.y + btnHeight) {
-            if (btn.mode === 'ONLINE') {
-              selectedButtonIndex = i;
-              startOnlineMenu();
-            } else {
-              gameMode = btn.mode;
-              selectedButtonIndex = i; 
-              nextRound(); 
-            }
-            return;
-        }
+  const btnWidth = 250;
+  const btnHeight = 50;
+  const btnX = (width - btnWidth) / 2;
+
+  for (let i = 0; i < titleButtons.length; i++) {
+    const btn = titleButtons[i];
+    if (px >= btnX && px <= btnX + btnWidth && py >= btn.y && py <= btn.y + btnHeight) {
+      selectedButtonIndex = i;
+      if (btn.mode === 'ONLINE') {
+        startOnlineMenu();
+      } else {
+        gameMode = btn.mode;
+        nextRound();
+      }
+      return true;
     }
   }
+  return false;
+}
+
+function mousePressed() {
+  if (handleTitlePointer(mouseX, mouseY)) return false;
+}
+
+// スマホでは mousePressed だけに依存せず、タッチを直接処理する。
+function touchStarted() {
+  if (gameMode === 'TITLE') {
+    const px = (typeof mouseX === 'number' && isFinite(mouseX)) ? mouseX : touchX;
+    const py = (typeof mouseY === 'number' && isFinite(mouseY)) ? mouseY : touchY;
+    handleTitlePointer(px, py);
+    return false;
+  }
+  return false;
 }
 
 // プレイヤー/CPUに応じてバッグを管理
