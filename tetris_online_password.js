@@ -32,7 +32,8 @@ var onlineRole = 0; // 1 = ホスト(P1), 2 = ゲスト(P2)
 var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlineMatchStartRequested = false;
-const ONLINE_BUILD_VERSION = 'WIDE-NEXT6-20260903-8';
+var onlineJoinedCount = 0;
+const ONLINE_BUILD_VERSION = 'HOSTSTART-20260904-10';
 var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
@@ -379,7 +380,12 @@ function drawOnlineFourPlayerScreen() {
 
   noStroke(); fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${count} PLAYERS`,width/2,18);
   textSize(9); fill(120); text(ONLINE_BUILD_VERSION,width/2,31);
-  if(onlineStatus){fill(190);textSize(13);text(onlineStatus,width/2,height-18);}
+  if(onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted){
+    const bx=width/2-110, by=height-82, bw=220, bh=42;
+    stroke(255); strokeWeight(2); fill(55,110,70); rect(bx,by,bw,bh,8);
+    noStroke(); fill(255); textSize(20); text('START',width/2,by+bh/2);
+  }
+  if(onlineStatus){fill(190);textSize(13);text(onlineStatus,width/2,onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted ? height-98 : height-18);}
 
   if(countdownTime>0) drawOnlineCountdown(selfY,selfH);
   if(isPaused && !isRoundOver){
@@ -1519,8 +1525,25 @@ function handleTitlePointer(px, py) {
 }
 
 function mousePressed(event) {
-  if (gameMode !== 'TITLE') return;
   const cnv = (gameCanvas && gameCanvas.elt) ? gameCanvas.elt : document.querySelector('canvas');
+  if (gameMode === 'ONLINE') {
+    let px = Number(mouseX), py = Number(mouseY);
+    if (event && cnv && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+      const r = cnv.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        px = (event.clientX - r.left) * (width / r.width);
+        py = (event.clientY - r.top) * (height / r.height);
+      }
+    }
+    const count=Math.max(2,Math.min(4,Number(onlinePlayerCount)||2));
+    if(onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted){
+      const bx=width/2-110, by=height-82, bw=220, bh=42;
+      if(px>=bx && px<=bx+bw && py>=by && py<=by+bh){ requestOnlineMatchStart(); return false; }
+    }
+    return false;
+  }
+  if (gameMode !== 'TITLE') return;
+  
   let px = Number(mouseX);
   let py = Number(mouseY);
   if (event && cnv && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
@@ -2084,6 +2107,7 @@ function connectOnlineSocket(action) {
     if (msg.type === 'roomJoined') {
       onlineMatchStarted = false;
       onlineMatchStartRequested = false;
+      onlineJoinedCount = 1;
       onlineRole = Number(msg.role) || 0;
       onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount || 2;
       onlineRoom = String(msg.password || msg.room || onlineRoom);
@@ -2101,15 +2125,11 @@ function connectOnlineSocket(action) {
     if (msg.type === 'roomStatus') {
       onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount;
       const joinedCount = Number(msg.count) || 0;
+      onlineJoinedCount = joinedCount;
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || onlineAlive || {};
       if (joinedCount >= onlinePlayerCount) {
-        onlineStatus = '人数がそろいました。対戦を開始しています...';
-        // 満員通知だけでも必ず開始する。gameMode/isStartedの状態には依存しない。
-        if (!onlineMatchStarted && !onlineMatchStartRequested && onlineRole >= 1) {
-          onlineMatchStartRequested = true;
-          beginOnlineMatchLocal();
-        }
+        onlineStatus = '人数がそろいました。ホストのスタートを待っています。';
       } else {
         onlineStatus = `参加者 ${joinedCount}/${onlinePlayerCount}人`;
       }
@@ -2117,6 +2137,7 @@ function connectOnlineSocket(action) {
     }
 
     if (msg.type === 'start') {
+      onlineMatchStartRequested = true;
       onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount || 2;
       onlineScores = msg.scores || {};
       onlineAlive = msg.alive || {};
@@ -2208,6 +2229,15 @@ function connectOnlineSocket(action) {
   onlineSocket.onerror = () => {
     onlineStatus = 'オンライン接続エラー';
   };
+}
+
+function requestOnlineMatchStart() {
+  if (onlineRole !== 1 || onlineMatchStarted) return;
+  const count=Math.max(2,Math.min(4,Number(onlinePlayerCount)||2));
+  if (onlineJoinedCount < count) return;
+  if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) { onlineStatus='サーバーに接続されていません'; return; }
+  onlineMatchStartRequested=true; onlineStatus='対戦を開始しています...';
+  try { onlineSocket.send(JSON.stringify({type:'input',action:'startMatch'})); } catch(e) { onlineMatchStartRequested=false; }
 }
 
 function beginOnlineMatchLocal() {
