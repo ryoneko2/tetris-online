@@ -399,7 +399,7 @@ function drawOnlineFourPlayerScreen() {
     const winnerName = onlinePlayerNames[onlineMatchWinnerRole || onlineRoundWinnerRole] || ('PLAYER ' + (onlineMatchWinnerRole || onlineRoundWinnerRole));
     if(isMatchOver && onlineMatchWinnerRole) text(`${winnerName} Win`,width/2,height/2-20);
     else if(onlineRoundWinnerRole) text(`${winnerName} WINS ROUND!`,width/2,height/2-20);
-    textSize(16); text('A / C / 回転 で次のラウンド',width/2,height/2+25);
+    textSize(16); text(isMatchOver ? '何かキーを押すとモード選択へ' : 'A / S / D / W / C / 回転 で次のラウンド',width/2,height/2+25);
   }
 }
 
@@ -2224,6 +2224,7 @@ function connectOnlineSocket(action) {
       onlineRoundWinnerRole = Number(msg.winner) || 0;
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || onlineAlive || {};
+      onlinePlayerNames = msg.names || onlinePlayerNames || {};
       isRoundOver = true;
       isMatchOver = !!msg.matchOver;
       onlineMatchWinnerRole = Number(msg.matchWinner) || 0;
@@ -2249,8 +2250,10 @@ function connectOnlineSocket(action) {
       onlineScores = msg.scores || onlineScores || {};
       onlinePlayerNames = msg.names || onlinePlayerNames || {};
       onlineMatchWinnerRole = Number(msg.winner) || 0;
+      onlineRoundWinnerRole = 0;
       isMatchOver = true;
       isRoundOver = true;
+      onlineStatus = (onlinePlayerNames[onlineMatchWinnerRole] || ('PLAYER ' + onlineMatchWinnerRole)) + ' Win';
       return;
     }
 
@@ -2618,8 +2621,27 @@ function applyOnlineState(s) {
 function keyPressed() {
   // オンラインはROLE 1〜4の全員が自分のP1エンジンを操作する。
   if (gameMode === 'ONLINE' && onlineRole >= 1) {
-    if (isRoundOver || isMatchOver) {
-      if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW || key === 'w' || key === 'W' || key === 'a' || key === 'A' || key === 'c' || key === 'C') sendOnlineAction('nextRound');
+    if (isMatchOver) {
+      // マッチ終了後は何らかのキー入力でオンラインを終了してモード選択へ戻る。
+      if (onlineSocket) { try { onlineSocket.close(); } catch(e) {} }
+      onlineSocket = null;
+      onlineConnected = false;
+      onlineMatchStarted = false;
+      onlineMatchStartRequested = false;
+      onlineRoundRequestSent = false;
+      gameMode = 'TITLE';
+      isStarted = false;
+      isRoundOver = false;
+      isMatchOver = false;
+      onlineStatus = '';
+      return false;
+    }
+    if (isRoundOver) {
+      if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW ||
+          key === 'w' || key === 'W' || key === 'a' || key === 'A' || key === 's' || key === 'S' ||
+          key === 'd' || key === 'D' || key === 'c' || key === 'C') {
+        sendOnlineAction('nextRound');
+      }
       return false;
     }
     // 通常のオンライン操作は下のwindow.keydownだけで処理する。
@@ -3418,8 +3440,25 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
   window.addEventListener('keydown',e=>{
     if(!active()) return;
     const c=e.code;
-    if(['KeyA','KeyD','KeyS','KeyW','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyC'].includes(c)) e.preventDefault();
-    if(isPaused||countdownTime>0||isRoundOver||isMatchOver||!isStarted) return;
+    const isControlKey=['KeyA','KeyD','KeyS','KeyW','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyC'].includes(c);
+    if(isControlKey) e.preventDefault();
+
+    // ラウンド終了：指定された操作のいずれかで全員の次ラウンド開始を要求。
+    if(isRoundOver && !isMatchOver) {
+      if(isControlKey && !e.repeat) sendOnlineAction('nextRound');
+      return;
+    }
+
+    // マッチ終了：何らかのキー入力でモード選択画面へ戻る。
+    if(isMatchOver) {
+      if(onlineSocket) { try { onlineSocket.close(); } catch(err) {} }
+      onlineSocket=null; onlineConnected=false; onlineMatchStarted=false; onlineMatchStartRequested=false;
+      onlineRoundRequestSent=false; gameMode='TITLE'; isStarted=false; isRoundOver=false; isMatchOver=false;
+      onlineStatus='';
+      return;
+    }
+
+    if(isPaused||countdownTime>0||!isStarted) return;
     if(c==='KeyA') onlineGuestKeyState.left=true;
     else if(c==='KeyD') onlineGuestKeyState.right=true;
     else if(c==='KeyS') onlineGuestKeyState.down=true;
