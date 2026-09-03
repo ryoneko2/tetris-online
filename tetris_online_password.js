@@ -32,7 +32,7 @@ var onlineRole = 0; // 1 = ホスト(P1), 2 = ゲスト(P2)
 var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlineMatchStartRequested = false;
-const ONLINE_BUILD_VERSION = 'STARTFIX-20260903-5';
+const ONLINE_BUILD_VERSION = 'WIDE-NEXT6-20260903-8';
 var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
@@ -202,7 +202,7 @@ const I_KICK_DATA = [
 
 function setup() {
   // ▼▼▼ 修正点 2 (テトリス25): キャンバスサイズを変更 (36 * 22 = 792) ▼▼▼
-  const canvas = createCanvas(TOTAL_WIDTH_RETSU * BLOKU_SAIZU, 810);
+  const canvas = createCanvas(1100, 810);
   gameCanvas = canvas;
   // スマホのタッチをブラウザのスクロール/ズームとして処理させず、
   // p5.js の touchStarted() に確実に渡す。
@@ -341,29 +341,37 @@ function setup() {
 function drawOnlineFourPlayerScreen() {
   background(18,18,30);
   const count=Math.max(2,Math.min(4,Number(onlinePlayerCount)||2));
+  // オンライン画面を横長にして、自分の盤面の右にNEXT 6個を配置。
   const selfCell=22, selfW=RETSU*selfCell, selfH=GYO*selfCell;
   const smallCell=13, oppW=RETSU*smallCell, oppH=GYO*smallCell;
-  const hudW=108, gap=24;
-  const totalW=hudW+selfW+gap+oppW;
+  const holdW=118, nextW=122, gap=20, oppGapX=26;
+  const totalW=holdW+selfW+gap+nextW+gap+oppW;
   const startX=Math.max(10,(width-totalW)/2);
   const selfY=70;
 
-  // 自分：HOLD / NEXT / ATTACKを左、盤面を中央寄りに表示
-  drawOnlineSelfHud(startX,selfY,hudW);
-  drawOnlineBoardAt(startX+hudW,selfY,selfCell,gameBoard,imaNoBurokku);
-  noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(18);
-  text(`PLAYER ${onlineRole}  YOU`,startX+hudW+selfW/2,selfY-28);
-  fill(220); textSize(14); text(`SCORE ${sukoa}`,startX+hudW+selfW/2,selfY+selfH+20);
+  // 左：HOLD / ATTACK
+  drawOnlineSelfHud(startX,selfY,holdW);
 
-  // 相手盤面
+  // 中央：自分の盤面
+  const boardX=startX+holdW;
+  drawOnlineBoardAt(boardX,selfY,selfCell,gameBoard,imaNoBurokku);
+  noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(18);
+  text(`PLAYER ${onlineRole}  YOU`,boardX+selfW/2,selfY-28);
+  fill(220); textSize(14); text(`SCORE ${sukoa}`,boardX+selfW/2,selfY+selfH+20);
+
+  // 自分の盤面の右：NEXT 6個
+  const nextX=boardX+selfW+gap;
+  drawOnlineNextPanel(nextX,selfY,nextW);
+
+  // さらに右：相手盤面
   const opponents=[];
   for(let role=1;role<=count;role++) if(role!==onlineRole) opponents.push(role);
-  const oppX=startX+hudW+selfW+gap;
-  const oppGap=22;
-  const allH=opponents.length*oppH+(opponents.length-1)*oppGap;
+  const oppX=nextX+nextW+gap;
+  const oppGapY=22;
+  const allH=opponents.length*oppH+(opponents.length-1)*oppGapY;
   const oppTop=selfY+Math.max(0,(selfH-allH)/2);
   opponents.forEach((role,i)=>{
-    const y=oppTop+i*(oppH+oppGap), st=onlineRemoteStates[role];
+    const y=oppTop+i*(oppH+oppGapY), st=onlineRemoteStates[role];
     drawOnlineRemoteBoardAt(oppX,y,smallCell,st);
     noStroke(); fill(215); textSize(14); text(`PLAYER ${role}`,oppX+oppW/2,y-16);
     fill(190); textSize(12); text(`SCORE ${st?Number(st.score)||0:0}`,oppX+oppW/2,y+oppH+15);
@@ -373,7 +381,6 @@ function drawOnlineFourPlayerScreen() {
   textSize(9); fill(120); text(ONLINE_BUILD_VERSION,width/2,31);
   if(onlineStatus){fill(190);textSize(13);text(onlineStatus,width/2,height-18);}
 
-  // カウントダウンもオンライン画面に重ねる
   if(countdownTime>0) drawOnlineCountdown(selfY,selfH);
   if(isPaused && !isRoundOver){
     fill(0,0,0,160); rect(0,0,width,height); fill(255); textSize(32); text('PAUSED',width/2,height/2);
@@ -383,6 +390,25 @@ function drawOnlineFourPlayerScreen() {
     if(isMatchOver && onlineMatchWinnerRole) text(`PLAYER ${onlineMatchWinnerRole} WINS MATCH!`,width/2,height/2-20);
     else if(onlineRoundWinnerRole) text(`PLAYER ${onlineRoundWinnerRole} WINS ROUND!`,width/2,height/2-20);
     textSize(16); text('A / C / 回転 で次のラウンド',width/2,height/2+25);
+  }
+}
+
+function drawOnlineNextPanel(x,y,w){
+  const panelH=GYO*BLOKU_SAIZU;
+  noStroke(); fill(10,10,20,235); rect(x,y,w,panelH);
+  fill(255); textAlign(CENTER,CENTER); textSize(15); text('NEXT',x+w/2,y+10);
+
+  const preview=[];
+  const bag=Array.isArray(p1BurokkuBaggu)?p1BurokkuBaggu:[];
+  const nextBag=Array.isArray(p1TsugiBurokkuBaggu)?p1TsugiBurokkuBaggu:[];
+  for(let i=bag.length-1;i>=0 && preview.length<6;i--) preview.push(bag[i]);
+  for(let i=nextBag.length-1;i>=0 && preview.length<6;i--) preview.push(nextBag[i]);
+
+  const boxH=61, boxGap=5, top=y+28;
+  for(let i=0;i<6;i++){
+    const cy=top+i*(boxH+boxGap);
+    stroke(75); noFill(); rect(x+8,cy,w-16,boxH,4);
+    if(preview[i]!==undefined) drawMiniBurokku(preview[i],x+w/2,cy+boxH/2);
   }
 }
 
@@ -469,22 +495,14 @@ function drawOnlineRemoteBoardAt(x,y,cell,st){
   drawOnlineBoardAt(x,y,cell,st&&st.board?st.board:null,st&&st.block?st.block:null);
 }
 function drawOnlineSelfHud(x,y,w){
-  const box=4*BLOKU_SAIZU, mini=2.5*BLOKU_SAIZU;
-  noStroke(); fill(10,10,20,235); rect(x,y,w,GYO*BLOKU_SAIZU);
+  const box=4*BLOKU_SAIZU;
+  const panelH=GYO*BLOKU_SAIZU;
+  noStroke(); fill(10,10,20,235); rect(x,y,w,panelH);
   fill(255); textAlign(CENTER,CENTER); textSize(15); text('HOLD',x+w/2,y+10);
   stroke(100); noFill(); rect(x+8,y+22,w-16,box/1.6,5);
   if(horudoBurokku!==null) drawMiniBurokku(horudoBurokku,x+w/2,y+22+(box/1.6)/2);
-  noStroke(); fill(255); textSize(15); text('NEXT',x+w/2,y+105);
-  const preview=[];
-  const bag=Array.isArray(p1BurokkuBaggu)?p1BurokkuBaggu:[];
-  const nextBag=Array.isArray(p1TsugiBurokkuBaggu)?p1TsugiBurokkuBaggu:[];
-  for(let i=bag.length-1;i>=0 && preview.length<5;i--) preview.push(bag[i]);
-  for(let i=nextBag.length-1;i>=0 && preview.length<5;i--) preview.push(nextBag[i]);
-  for(let i=0;i<preview.length;i++){
-    const cy=y+130+i*56; stroke(75); noFill(); rect(x+10,cy,w-20,50,4);
-    drawMiniBurokku(preview[i],x+w/2,cy+25);
-  }
-  const gaugeY=y+420, gaugeH=120, gaugeW=22;
+
+  const gaugeY=y+220, gaugeH=170, gaugeW=22;
   noStroke(); fill(255); textSize(13); text('ATTACK',x+w/2,gaugeY-10);
   fill(45,45,65); rect(x+(w-gaugeW)/2,gaugeY,gaugeW,gaugeH);
   const totalAttack=Math.max(0,Number(attackPower)||0)+((playerAttackQueue||[]).reduce((a,v)=>a+(Number(v)||0),0));
@@ -1519,7 +1537,7 @@ function mousePressed(event) {
 function touchStarted(event) {
   if (gameMode === 'TITLE') {
     // iPhone/Safariではp5のmouseX/mouseYがCSS表示倍率とずれることがあるため、
-    // 実際のcanvasの表示矩形から論理座標(792x810)へ変換する。
+    // 実際のcanvasの表示矩形から論理座標(1100x810)へ変換する。
     const cnv = (gameCanvas && gameCanvas.elt) ? gameCanvas.elt : document.querySelector('canvas');
     let px = NaN;
     let py = NaN;
