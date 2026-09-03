@@ -44,6 +44,7 @@ var onlinePrevHardDrop = false;
 var onlinePrevHold = false;
 var onlineRoundRequestSent = false;
 var onlineGuestInitialized = false;
+var onlineInitialStateSent = false;
 var titleButtons = [];
 var selectedButtonIndex = 0; 
 
@@ -1850,6 +1851,7 @@ function connectOnlineSocket(action) {
         gameMode = 'ONLINE';
         nextRound();
         onlineStatus = '対戦開始！';
+        onlineInitialStateSent = false;
         sendOnlineState(true);
       }
       return;
@@ -1860,6 +1862,7 @@ function connectOnlineSocket(action) {
       if (onlineRole === 2) {
         gameMode = 'ONLINE';
         onlineGuestInitialized = false;
+        onlineLastAppliedSeq = 0;
         onlineStatus = '対戦開始！';
       }
       return;
@@ -2030,33 +2033,23 @@ function isValidOnlineArray(value, maxLength) {
   return Array.isArray(value) && value.length <= maxLength;
 }
 
-function serializeOnlineState() {
+function serializeOnlineState(includeP2 = false) {
   onlineStateSeq++;
-  return {
+  const state = {
     seq: onlineStateSeq,
     gameMode:'ONLINE',
+    // ホスト側（P1）の情報。ゲストが相手の盤面として表示する。
     gameBoard:cloneOnlineValue(gameBoard),
-    gameBoardP2:cloneOnlineValue(gameBoardP2),
     imaNoBurokku:cloneOnlineValue(imaNoBurokku),
-    imaNoBurokkuP2:cloneOnlineValue(imaNoBurokkuP2),
     sukoa:sukoa,
-    cpuScore:cpuScore,
     attackPower:attackPower,
-    cpuAttackPower:cpuAttackPower,
     backToBack:backToBack,
-    cpuBackToBack:cpuBackToBack,
     comboCount:comboCount,
-    cpuComboCount:cpuComboCount,
     horudoBurokku:horudoBurokku,
-    cpuHoldBlock:cpuHoldBlock,
     horudoShiyouzumi:horudoShiyouzumi,
-    cpuHoldUsed:cpuHoldUsed,
     playerAttackQueue:cloneOnlineValue(playerAttackQueue),
+    // ゲスト自身が受けるおじゃまだけは常時同期する。
     player2AttackQueue:cloneOnlineValue(player2AttackQueue),
-    p1BurokkuBaggu:cloneOnlineValue(p1BurokkuBaggu),
-    p1TsugiBurokkuBaggu:cloneOnlineValue(p1TsugiBurokkuBaggu),
-    p2BurokkuBaggu:cloneOnlineValue(p2BurokkuBaggu),
-    p2TsugiBurokkuBaggu:cloneOnlineValue(p2TsugiBurokkuBaggu),
     playerWins:playerWins,
     p2Wins:p2Wins,
     isStarted:isStarted,
@@ -2065,24 +2058,46 @@ function serializeOnlineState() {
     isMatchOver:isMatchOver,
     roundWinner:roundWinner,
     isLanded:isLanded,
-    isLandedP2:isLandedP2,
     lockDelayResetCount:lockDelayResetCount,
-    lockDelayResetCountP2:lockDelayResetCountP2,
     countdownRemaining:Math.max(0, Math.min(countdownDuration, countdownDuration - (millis() - countdownTime)))
   };
+
+  // 最初の1回だけP2の初期状態を送る。
+  // 以後はゲスト自身がP2を動かすため、P2盤面を毎回送らない。
+  if (includeP2) {
+    state.gameBoardP2 = cloneOnlineValue(gameBoardP2);
+    state.imaNoBurokkuP2 = cloneOnlineValue(imaNoBurokkuP2);
+    state.cpuScore = cpuScore;
+    state.cpuAttackPower = cpuAttackPower;
+    state.cpuBackToBack = cpuBackToBack;
+    state.cpuComboCount = cpuComboCount;
+    state.cpuHoldBlock = cpuHoldBlock;
+    state.cpuHoldUsed = cpuHoldUsed;
+    state.player2AttackQueue = cloneOnlineValue(player2AttackQueue);
+    state.p2BurokkuBaggu = cloneOnlineValue(p2BurokkuBaggu);
+    state.p2TsugiBurokkuBaggu = cloneOnlineValue(p2TsugiBurokkuBaggu);
+    state.isLandedP2 = isLandedP2;
+    state.lockDelayResetCountP2 = lockDelayResetCountP2;
+  }
+
+  return state;
 }
 
 function sendOnlineState(force=false) {
   if (onlineRole !== 1 || !onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
   const now = millis();
-  if (!force && now - onlineLastStateSend < 30) return;
-  // WebSocket送信待ちが膨らんだら新しい状態を優先して一旦捨てる。
-  if (onlineSocket.bufferedAmount > 256 * 1024) return;
+  // 相手の盤面は少し遅れてもよいので、通信量を大幅に減らす。
+  // 自分の操作はローカルで即時処理するため、ここを遅くしても操作感には影響しない。
+  if (!force && now - onlineLastStateSend < 120) return;
+  if (onlineSocket.bufferedAmount > 128 * 1024) return;
   onlineLastStateSend = now;
+
+  const includeP2 = !onlineInitialStateSent;
   try {
-    const payload = JSON.stringify({ type:'state', state:serializeOnlineState() });
+    const payload = JSON.stringify({ type:'state', state:serializeOnlineState(includeP2) });
     if (payload.length > 128 * 1024) return;
     onlineSocket.send(payload);
+    if (includeP2) onlineInitialStateSent = true;
   } catch (e) {
     onlineStatus = '状態送信エラー';
   }
@@ -2098,10 +2113,10 @@ function applyOnlineState(s) {
   const seq = Number(s.seq || 0);
   if (seq && seq <= onlineLastAppliedSeq) return false;
 
-  // 盤面・現在ブロックは最重要。どれかが壊れていたら「状態全体」を反映しない。
-  if (!isValidOnlineBoard(s.gameBoard) || !isValidOnlineBoard(s.gameBoardP2)) return false;
-
+  // ゲストは自分のP2をローカルで動かす。P2情報は最初の同期時だけ必要。
+  if (!isValidOnlineBoard(s.gameBoard)) return false;
   const keepGuestP2 = (onlineRole === 2 && onlineGuestInitialized);
+  if (!keepGuestP2 && (!isValidOnlineBoard(s.gameBoardP2) || !isValidOnlineBlock(s.imaNoBurokkuP2))) return false;
   const localP2 = keepGuestP2 ? {
     gameBoardP2, imaNoBurokkuP2, cpuScore, cpuAttackPower, cpuBackToBack, cpuComboCount,
     cpuHoldBlock, cpuHoldUsed, player2AttackQueue, p2BurokkuBaggu, p2TsugiBurokkuBaggu,
@@ -2109,10 +2124,10 @@ function applyOnlineState(s) {
     dasStartTimeLeftP2, dasStartTimeRightP2, arrTimeLeftP2, arrTimeRightP2, lastMoveDownTimeP2,
     wasHardDropPressedP2
   } : null;
-  if (!isValidOnlineBlock(s.imaNoBurokku) || !isValidOnlineBlock(s.imaNoBurokkuP2)) return false;
-  if (!isValidOnlineArray(s.playerAttackQueue, 40) || !isValidOnlineArray(s.player2AttackQueue, 40)) return false;
-  if (!isValidOnlineArray(s.p1BurokkuBaggu, 20) || !isValidOnlineArray(s.p1TsugiBurokkuBaggu, 20) ||
-      !isValidOnlineArray(s.p2BurokkuBaggu, 20) || !isValidOnlineArray(s.p2TsugiBurokkuBaggu, 20)) return false;
+  if (!isValidOnlineBlock(s.imaNoBurokku)) return false;
+  if (!isValidOnlineArray(s.playerAttackQueue, 40)) return false;
+  if (!keepGuestP2 && (!isValidOnlineArray(s.player2AttackQueue, 40) ||
+      !isValidOnlineArray(s.p2BurokkuBaggu, 20) || !isValidOnlineArray(s.p2TsugiBurokkuBaggu, 20))) return false;
 
   gameMode = 'ONLINE';
   gameBoard = cloneOnlineValue(s.gameBoard);
@@ -2132,11 +2147,11 @@ function applyOnlineState(s) {
   horudoShiyouzumi = !!s.horudoShiyouzumi;
   cpuHoldUsed = !!s.cpuHoldUsed;
   playerAttackQueue = cloneOnlineValue(s.playerAttackQueue);
-  player2AttackQueue = cloneOnlineValue(s.player2AttackQueue);
-  p1BurokkuBaggu = cloneOnlineValue(s.p1BurokkuBaggu);
-  p1TsugiBurokkuBaggu = cloneOnlineValue(s.p1TsugiBurokkuBaggu);
-  p2BurokkuBaggu = cloneOnlineValue(s.p2BurokkuBaggu);
-  p2TsugiBurokkuBaggu = cloneOnlineValue(s.p2TsugiBurokkuBaggu);
+  if (!keepGuestP2) {
+    player2AttackQueue = cloneOnlineValue(s.player2AttackQueue);
+    p2BurokkuBaggu = cloneOnlineValue(s.p2BurokkuBaggu);
+    p2TsugiBurokkuBaggu = cloneOnlineValue(s.p2TsugiBurokkuBaggu);
+  }
   playerWins = Math.max(0, Math.min(MATCH_WIN_COUNT, Number(s.playerWins) || 0));
   p2Wins = Math.max(0, Math.min(MATCH_WIN_COUNT, Number(s.p2Wins) || 0));
   isStarted = !!s.isStarted;
