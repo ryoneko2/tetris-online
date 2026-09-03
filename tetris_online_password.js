@@ -1770,7 +1770,13 @@ function connectOnlineSocket(action) {
     }
 
     if (msg.type === 'state') {
-      if (onlineRole === 2) applyOnlineState(msg.state);
+      if (onlineRole === 2 && msg.state && typeof msg.state === 'object') {
+        try {
+          applyOnlineState(msg.state);
+        } catch (e) {
+          onlineStatus = '受信データエラー';
+        }
+      }
       return;
     }
 
@@ -1780,10 +1786,11 @@ function connectOnlineSocket(action) {
     }
 
     if (msg.type === 'remoteInputState' && onlineRole === 1) {
+      const state = (msg.state && typeof msg.state === 'object') ? msg.state : {};
       onlineGuestKeyState = {
-        left: !!(msg.state && msg.state.left),
-        right: !!(msg.state && msg.state.right),
-        down: !!(msg.state && msg.state.down)
+        left: !!state.left,
+        right: !!state.right,
+        down: !!state.down
       };
       return;
     }
@@ -1821,18 +1828,27 @@ function sendOnlineAction(action) {
 
 function handleOnlineGuestInput() {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
+
+  // 通信が詰まっている場合は新しい入力を積まない。
+  if (onlineSocket.bufferedAmount > 256 * 1024) return;
+
   const now = millis();
-  if (now - onlineLastInputSend < 30) return;
+  if (now - onlineLastInputSend < 50) return;
   onlineLastInputSend = now;
 
-  onlineSocket.send(JSON.stringify({
-    type:'inputState',
-    state: {
-      left:keyIsDown(65),
-      right:keyIsDown(68),
-      down:keyIsDown(83)
-    }
-  }));
+  try {
+    onlineSocket.send(JSON.stringify({
+      type: 'inputState',
+      state: {
+        left: keyIsDown(65),
+        right: keyIsDown(68),
+        down: keyIsDown(83)
+      }
+    }));
+  } catch (e) {
+    // 通信エラーでゲームループを止めない
+    onlineStatus = '通信エラー';
+  }
 }
 
 function handleOnlineHostP2Input() {
@@ -1863,6 +1879,7 @@ function handleOnlineHostP2Input() {
 }
 
 function handleOnlineRemoteAction(action) {
+  if (typeof action !== 'string') return;
   if (isRoundOver || isMatchOver) {
     if (action === 'nextRound' && !onlineRoundRequestSent) {
       onlineRoundRequestSent = true;
@@ -1928,9 +1945,23 @@ function serializeOnlineState() {
 
 function sendOnlineState(force=false) {
   if (onlineRole !== 1 || !onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
-  if (!force && millis() - onlineLastStateSend < 80) return;
-  onlineLastStateSend = millis();
-  onlineSocket.send(JSON.stringify({ type:'state', state:serializeOnlineState() }));
+
+  // ソケットの送信キューが膨らんだら一旦捨てる。
+  // これがホスト側の重い処理・画面停止を防ぐ重要な部分。
+  if (onlineSocket.bufferedAmount > 512 * 1024) return;
+
+  const now = millis();
+  if (!force && now - onlineLastStateSend < 100) return;
+  onlineLastStateSend = now;
+
+  try {
+    onlineSocket.send(JSON.stringify({
+      type: 'state',
+      state: serializeOnlineState()
+    }));
+  } catch (e) {
+    onlineStatus = '通信エラー';
+  }
 }
 
 function sendOnlineStateIfNeeded() {
@@ -2084,6 +2115,7 @@ function keyPressed() {
 // 左移動
 function moveLeft(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
+  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let resets = (playerIndex === 1) ? lockDelayResetCount : lockDelayResetCountP2;
@@ -2112,6 +2144,7 @@ function moveLeft(playerIndex) {
 // 右移動
 function moveRight(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
+  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let resets = (playerIndex === 1) ? lockDelayResetCount : lockDelayResetCountP2;
@@ -2149,6 +2182,7 @@ function checkIfLanded(burokku, board) {
 // 下移動
 function moveDown(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
+  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let lY = (playerIndex === 1) ? lowestY : lowestYP2;
@@ -2178,6 +2212,7 @@ function moveDown(playerIndex) {
 // 右回転
 function rotateRight(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
+  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let lY = (playerIndex === 1) ? lowestY : lowestYP2;
@@ -2223,6 +2258,7 @@ function rotateRight(playerIndex) {
 // 左回転
 function rotateLeft(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
+  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let lY = (playerIndex === 1) ? lowestY : lowestYP2;
