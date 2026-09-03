@@ -31,9 +31,11 @@ var onlineSocket = null;
 var onlineRole = 0; // 1 = ホスト(P1), 2 = ゲスト(P2)
 var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
+var onlinePlayerNames = {};
+var onlinePlayerName = '';
 var onlineMatchStartRequested = false;
 var onlineJoinedCount = 0;
-const ONLINE_BUILD_VERSION = 'HOSTSTART-20260904-12';
+const ONLINE_BUILD_VERSION = 'PLAYERNAME-20260904-14';
 var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
@@ -357,7 +359,7 @@ function drawOnlineFourPlayerScreen() {
   const boardX=startX+holdW;
   drawOnlineBoardAt(boardX,selfY,selfCell,gameBoard,imaNoBurokku);
   noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(18);
-  text(`PLAYER ${onlineRole}  YOU`,boardX+selfW/2,selfY-28);
+  text(`${onlinePlayerNames[onlineRole] || 'PLAYER '+onlineRole}  YOU`,boardX+selfW/2,selfY-28);
   fill(220); textSize(14); text(`SCORE ${sukoa}`,boardX+selfW/2,selfY+selfH+20);
 
   // 自分の盤面の右：NEXT 6個
@@ -374,14 +376,14 @@ function drawOnlineFourPlayerScreen() {
   opponents.forEach((role,i)=>{
     const y=oppTop+i*(oppH+oppGapY), st=onlineRemoteStates[role];
     drawOnlineRemoteBoardAt(oppX,y,smallCell,st);
-    noStroke(); fill(215); textSize(14); text(`PLAYER ${role}`,oppX+oppW/2,y-16);
+    noStroke(); fill(215); textSize(14); text(`${onlinePlayerNames[role] || 'PLAYER '+role}`,oppX+oppW/2,y-16);
     fill(190); textSize(12); text(`SCORE ${st?Number(st.score)||0:0}`,oppX+oppW/2,y+oppH+15);
   });
 
   noStroke(); fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${count} PLAYERS`,width/2,18);
   textSize(9); fill(120); text(ONLINE_BUILD_VERSION,width/2,31);
   if(onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted){
-    const bx=width/2-145, by=height-92, bw=290, bh=54;
+    const bx=width/2-160, by=605, bw=320, bh=58;
     stroke(255); strokeWeight(3); fill(45,125,75); rect(bx,by,bw,bh,10);
     noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(22); text('対戦を開始する（START）',width/2,by+bh/2);
     fill(235); textSize(12); text('ホストだけが押せます',width/2,by+bh+15);
@@ -394,8 +396,9 @@ function drawOnlineFourPlayerScreen() {
   }
   if(isRoundOver){
     fill(0,0,0,175); rect(0,0,width,height); fill(255); textSize(27);
-    if(isMatchOver && onlineMatchWinnerRole) text(`PLAYER ${onlineMatchWinnerRole} WINS MATCH!`,width/2,height/2-20);
-    else if(onlineRoundWinnerRole) text(`PLAYER ${onlineRoundWinnerRole} WINS ROUND!`,width/2,height/2-20);
+    const winnerName = onlinePlayerNames[onlineMatchWinnerRole || onlineRoundWinnerRole] || ('PLAYER ' + (onlineMatchWinnerRole || onlineRoundWinnerRole));
+    if(isMatchOver && onlineMatchWinnerRole) text(`${winnerName} Win`,width/2,height/2-20);
+    else if(onlineRoundWinnerRole) text(`${winnerName} WINS ROUND!`,width/2,height/2-20);
     textSize(16); text('A / C / 回転 で次のラウンド',width/2,height/2+25);
   }
 }
@@ -1096,11 +1099,13 @@ function drawTitleScreen() {
     if (onlineStatus) {
         fill(255, 255, 0);
         textSize(18);
-        text(onlineStatus, width / 2, 650);
+        const onlineCountForTitle = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
+        const showHostStartTitle = !!(onlineRoom && onlineRole === 1 && onlineJoinedCount >= onlineCountForTitle && !onlineMatchStarted);
+        text(onlineStatus, width / 2, showHostStartTitle ? 540 : 650);
         if (onlineRoom) {
             fill(255);
             textSize(24);
-            text('ROOM: ' + onlineRoom, width / 2, 685);
+            text('ROOM: ' + onlineRoom, width / 2, showHostStartTitle ? 575 : 685);
         }
     }
 
@@ -1108,7 +1113,7 @@ function drawTitleScreen() {
     const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
     if (onlineRoom && onlineRole === 1 && onlineJoinedCount >= onlineCount && !onlineMatchStarted) {
         const bx = width / 2 - 160;
-        const by = 715;
+        const by = 605;
         const bw = 320;
         const bh = 58;
         stroke(255, 255, 0);
@@ -1529,7 +1534,7 @@ function handleTitlePointer(px, py) {
   const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
   if (onlineRoom && onlineRole === 1 && onlineJoinedCount >= onlineCount && !onlineMatchStarted) {
     const bx = width / 2 - 160;
-    const by = 715;
+    const by = 605;
     const bw = 320;
     const bh = 58;
     if (px >= bx && px <= bx + bw && py >= by && py <= by + bh) {
@@ -1571,7 +1576,7 @@ function mousePressed(event) {
     }
     const count=Math.max(2,Math.min(4,Number(onlinePlayerCount)||2));
     if(onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted){
-      const bx=width/2-145, by=height-92, bw=290, bh=54;
+      const bx=width/2-160, by=605, bw=320, bh=58;
       if(px>=bx && px<=bx+bw && py>=by && py<=by+bh){ requestOnlineMatchStart(); return false; }
     }
     return false;
@@ -2066,6 +2071,13 @@ function startOnlineMenu() {
     return;
   }
 
+  let playerName = prompt('オンラインで表示するプレイヤーネームを入力してください。', 'プレイヤー');
+  if (playerName === null) return;
+  playerName = playerName.trim().replace(/[<>]/g, '');
+  if (!playerName) { alert('プレイヤーネームを入力してください。'); return; }
+  if (playerName.length > 16) playerName = playerName.slice(0,16);
+  onlinePlayerName = playerName;
+
   const mode = prompt(
     'オンライン対戦\n\n' +
     '1：部屋を作る（ホスト）\n' +
@@ -2130,7 +2142,8 @@ function connectOnlineSocket(action) {
     onlineSocket.send(JSON.stringify({
       type: action,
       password: onlineRoom,
-      playerCount: onlinePlayerCount
+      playerCount: onlinePlayerCount,
+      name: onlinePlayerName
     }));
   };
 
@@ -2147,6 +2160,7 @@ function connectOnlineSocket(action) {
       onlineRoom = String(msg.password || msg.room || onlineRoom);
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || onlineAlive || {};
+      onlinePlayerNames = msg.names || onlinePlayerNames || {};
       if (onlineRole === 1) {
         onlineStatus = `部屋を作りました。${onlinePlayerCount}人そろうまで待っています...`;
         alert('部屋を作りました！\n\n対戦パスワード：' + onlineRoom + '\n\n' + onlinePlayerCount + '人対戦です。\nこの6桁の数字を参加者に伝えてください。');
@@ -2162,6 +2176,7 @@ function connectOnlineSocket(action) {
       onlineJoinedCount = joinedCount;
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || onlineAlive || {};
+      onlinePlayerNames = msg.names || onlinePlayerNames || {};
       if (joinedCount >= onlinePlayerCount) {
         onlineStatus = '人数がそろいました。ホストのスタートを待っています。';
       } else {
@@ -2175,6 +2190,7 @@ function connectOnlineSocket(action) {
       onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount || 2;
       onlineScores = msg.scores || {};
       onlineAlive = msg.alive || {};
+      onlinePlayerNames = msg.names || onlinePlayerNames || {};
       beginOnlineMatchLocal();
       return;
     }
@@ -2219,6 +2235,7 @@ function connectOnlineSocket(action) {
     if (msg.type === 'startRound') {
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || {};
+      onlinePlayerNames = msg.names || onlinePlayerNames || {};
       onlineRoundWinnerRole = 0;
       onlineRoundReadySent = false;
       isMatchOver = false;
@@ -2230,6 +2247,7 @@ function connectOnlineSocket(action) {
 
     if (msg.type === 'matchOver') {
       onlineScores = msg.scores || onlineScores || {};
+      onlinePlayerNames = msg.names || onlinePlayerNames || {};
       onlineMatchWinnerRole = Number(msg.winner) || 0;
       isMatchOver = true;
       isRoundOver = true;
