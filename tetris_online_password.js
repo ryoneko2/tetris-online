@@ -32,7 +32,7 @@ var onlineRole = 0; // 1 = ホスト(P1), 2 = ゲスト(P2)
 var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlineMatchStartRequested = false;
-const ONLINE_BUILD_VERSION = 'STARTFIX-20260903-4';
+const ONLINE_BUILD_VERSION = 'STARTFIX-20260903-5';
 var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
@@ -384,6 +384,77 @@ function drawOnlineFourPlayerScreen() {
     else if(onlineRoundWinnerRole) text(`PLAYER ${onlineRoundWinnerRole} WINS ROUND!`,width/2,height/2-20);
     textSize(16); text('A / C / 回転 で次のラウンド',width/2,height/2+25);
   }
+}
+
+function drawOnlineScaledBoard(board,cell){
+  if (!Array.isArray(board) || board.length !== GYO) return;
+  push();
+  noStroke();
+  for(let y=0;y<GYO;y++){
+    const row=board[y];
+    if(!Array.isArray(row) || row.length !== RETSU) continue;
+    for(let x=0;x<RETSU;x++){
+      const v=Number(row[x]);
+      if(Number.isInteger(v) && v>0 && v<burokkuIro.length){
+        fill(burokkuIro[v]);
+        rect(x*cell,y*cell,cell,cell);
+      }
+    }
+  }
+  pop();
+}
+
+function drawOnlineScaledBlock(block,cell){
+  if(!block || !Array.isArray(block.shape)) return;
+  const bx=Number(block.x), by=Number(block.y);
+  if(!Number.isFinite(bx) || !Number.isFinite(by)) return;
+  const blockColor=(Number(block.color)>=1 && Number(block.color)<burokkuIro.length)
+    ? burokkuIro[Number(block.color)] : color(255);
+
+  // ゴースト
+  const board=Array.isArray(gameBoard) ? gameBoard : null;
+  let ghostY=by;
+  if(board && board.length===GYO){
+    for(let n=0;n<=GYO+4;n++){
+      const test={...block,y:ghostY+1};
+      if(butsukaru(test,board)) break;
+      ghostY++;
+    }
+  }
+  push();
+  noFill();
+  stroke(255,255,255,100);
+  strokeWeight(Math.max(1,cell/10));
+  for(let r=0;r<block.shape.length;r++){
+    const row=block.shape[r];
+    if(!Array.isArray(row)) continue;
+    for(let c=0;c<row.length;c++){
+      if(row[c]!==0){
+        const px=(bx+c)*cell, py=(ghostY+r)*cell;
+        if(py+cell>=0 && py<=GYO*cell && px+cell>=0 && px<=RETSU*cell){
+          rect(px,py,cell,cell);
+        }
+      }
+    }
+  }
+  pop();
+
+  push();
+  noStroke();
+  fill(blockColor);
+  for(let r=0;r<block.shape.length;r++){
+    const row=block.shape[r];
+    if(!Array.isArray(row)) continue;
+    for(let c=0;c<row.length;c++){
+      if(row[c]!==0){
+        const px=(bx+c)*cell, py=(by+r)*cell;
+        if(py+cell>=0 && py<=GYO*cell && px+cell>=0 && px<=RETSU*cell){
+          rect(px,py,cell,cell);
+        }
+      }
+    }
+  }
+  pop();
 }
 
 function drawOnlineBoardAt(x,y,cell,board,block){
