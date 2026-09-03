@@ -16,7 +16,7 @@ function snapshot(room){
   return {scores,alive};
 }
 function roomStatus(room){
-  const st=snapshot(room); return {type:'roomStatus',playerCount:room.playerCount,count:room.players.length,scores:st.scores,alive:st.alive};
+  const st=snapshot(room); return {type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:!!room.started,scores:st.scores,alive:st.alive};
 }
 function makePassword(){ let p; do p=String(Math.floor(100000+Math.random()*900000)); while(rooms.has(p)); return p; }
 function removePlayer(ws,notify=true){
@@ -71,9 +71,20 @@ wss.on('connection',ws=>{
       if(room.players.length===room.playerCount && !room.started){
         room.started=true; room.roundOver=false; for(const p of room.players)p.alive=true;
         const st=snapshot(room);
+        const startMessage={type:'start',playerCount:room.playerCount,count:room.players.length,started:true,...st};
+        // まず全員へ即時送信。
         for(const p of room.players){
-          send(p.ws,{type:'roomStatus',playerCount:room.playerCount,count:room.players.length,...st});
-          send(p.ws,{type:'start',playerCount:room.playerCount,...st});
+          send(p.ws,{type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:true,...st});
+          send(p.ws,startMessage);
+        }
+        // Render/回線の一時的な取りこぼし対策として、開始通知を少しだけ再送する。
+        for(const delay of [500,1500,3000]){
+          setTimeout(()=>{
+            const r=rooms.get(password);
+            if(!r || !r.started || r.players.length<r.playerCount) return;
+            const latest=snapshot(r);
+            for(const pl of r.players) send(pl.ws,{type:'start',playerCount:r.playerCount,count:r.players.length,started:true,...latest});
+          },delay);
         }
         console.log(`対戦開始: ${password}`);
       }
