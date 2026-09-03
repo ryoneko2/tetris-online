@@ -132,7 +132,9 @@ wss.on('connection',ws=>{
       if(msg.action==='nextRound' && room.roundOver){
         room.roundOver=false;
         for(const p of room.players)p.alive=true;
-        const st=snapshot(room); broadcast(room,{type:'startRound',...st});
+        const st=snapshot(room);
+        // 次ラウンド開始通知は、押した本人を含む全員へ送る。
+        for(const p of room.players) send(p.ws,{type:'startRound',...st});
         return;
       }
       return;
