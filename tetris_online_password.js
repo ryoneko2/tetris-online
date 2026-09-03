@@ -2593,11 +2593,12 @@ function applyOnlineState(s) {
   }
   playerWins = Math.max(0, Math.min(MATCH_WIN_COUNT, Number(s.playerWins) || 0));
   p2Wins = Math.max(0, Math.min(MATCH_WIN_COUNT, Number(s.p2Wins) || 0));
-  isStarted = !!s.isStarted;
-  isPaused = !!s.isPaused;
-  isRoundOver = !!s.isRoundOver;
-  isMatchOver = !!s.isMatchOver;
-  roundWinner = typeof s.roundWinner === 'string' ? s.roundWinner : '';
+  // オンラインのラウンド状態はサーバーの roundOver / startRound / matchOver 通知を正として扱う。
+  // 他プレイヤーの playerState で自分の終了状態が上書きされると、
+  // ラウンド終了画面から抜けられなくなるため、ここでは isStarted / isPaused /
+  // isRoundOver / isMatchOver / roundWinner をリモート状態から上書きしない。
+  // 次ラウンド開始時は startRound メッセージ側で明示的にリセットする。
+  roundWinner = typeof s.roundWinner === 'string' ? s.roundWinner : roundWinner;
   isLanded = !!s.isLanded;
   isLandedP2 = !!s.isLandedP2;
   lockDelayResetCount = Math.max(0, Math.min(MAX_LOCK_DELAY_RESETS, Number(s.lockDelayResetCount) || 0));
