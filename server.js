@@ -3,177 +3,263 @@ const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
 
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = process.env.PORT || 8080;
 const ROOT = __dirname;
-const rooms = new Map();
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.txt': 'text/plain; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon'
-};
-
-function send(ws, message) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-
-  try {
-    // 相手側の送信キューが異常に膨らんだら古い状態を積み続けない。
-    if (ws.bufferedAmount > 1024 * 1024) return false;
-
-    ws.send(JSON.stringify(message));
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
-
-function makePassword() {
-  let password;
-  do {
-    password = String(Math.floor(100000 + Math.random() * 900000));
-  } while (rooms.has(password));
-  return password;
-}
-
-function removeFromRoom(ws, notify = true) {
-  const password = ws.room;
-  if (!password) return;
-
-  const room = rooms.get(password);
-  ws.room = null;
-
-  if (!room) return;
-
-  if (room.host === ws) {
-    if (room.guest && notify) send(room.guest, { type: 'peerLeft' });
-    if (room.guest) room.guest.room = null;
-    rooms.delete(password);
-  } else if (room.guest === ws) {
-    room.guest = null;
-    if (notify && room.host) send(room.host, { type: 'peerLeft' });
-  }
-}
-
+// ===============================
+// HTTPサーバー
+// ===============================
 const server = http.createServer((req, res) => {
-  const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-  const relative = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
-  const filePath = path.resolve(ROOT, relative);
+    let urlPath = req.url.split('?')[0];
 
-  if (!filePath.startsWith(ROOT + path.sep) && filePath !== path.resolve(ROOT, 'index.html')) {
-    res.writeHead(403);
-    return res.end('Forbidden');
-  }
-
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404, {'Content-Type': 'text/plain; charset=utf-8'});
-      return res.end('Not Found');
+    // トップページ
+    if (urlPath === '/' || urlPath === '') {
+        urlPath = '/index.html';
     }
-    const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, {'Content-Type': MIME[ext] || 'application/octet-stream'});
-    res.end(data);
-  });
+
+    // パストラバーサル対策
+    const filePath = path.normalize(path.join(ROOT, urlPath));
+
+    if (!filePath.startsWith(ROOT)) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+    }
+
+    fs.readFile(filePath, (err, data) => {
+        if (err) {
+            res.writeHead(404, {
+                'Content-Type': 'text/plain; charset=utf-8'
+            });
+            res.end('Not Found');
+            return;
+        }
+
+        const ext = path.extname(filePath).toLowerCase();
+
+        const contentTypes = {
+            '.html': 'text/html; charset=utf-8',
+            '.js': 'application/javascript; charset=utf-8',
+            '.json': 'application/json; charset=utf-8',
+            '.css': 'text/css; charset=utf-8',
+            '.txt': 'text/plain; charset=utf-8',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon'
+        };
+
+        res.writeHead(200, {
+            'Content-Type': contentTypes[ext] || 'application/octet-stream'
+        });
+
+        res.end(data);
+    });
 });
 
+// ===============================
+// WebSocketサーバー
+// ===============================
 const wss = new WebSocket.Server({ server });
 
+// パスワードごとのルーム
+const rooms = new Map();
+
+// ===============================
+// 6桁パスワード生成
+// ===============================
+function makePassword() {
+    let password;
+
+    do {
+        password = String(Math.floor(100000 + Math.random() * 900000));
+    } while (rooms.has(password));
+
+    return password;
+}
+
+// ===============================
+// WebSocket接続
+// ===============================
 wss.on('connection', (ws) => {
-  ws.room = null;
-  ws.role = 0;
+    let currentRoom = null;
+    let myRole = 0; // 1 = Host(P1), 2 = Guest(P2)
 
-  ws.on('message', (raw) => {
-    let msg;
-    try {
-      msg = JSON.parse(raw.toString());
-    } catch {
-      return send(ws, { type: 'error', message: '不正なメッセージです。' });
-    }
+    console.log('WebSocket接続');
 
-    if (msg.type === 'create') {
-      removeFromRoom(ws, false);
-      const password = /^\d{6}$/.test(String(msg.password || '')) && !rooms.has(String(msg.password))
-        ? String(msg.password)
-        : makePassword();
+    ws.on('message', (message) => {
+        let data;
 
-      rooms.set(password, { host: ws, guest: null });
-      ws.room = password;
-      ws.role = 1;
-
-      send(ws, { type: 'roomJoined', role: 1, room: password, password });
-      console.log(`ルーム作成: ${password}`);
-      return;
-    }
-
-    if (msg.type === 'join') {
-      const password = String(msg.password || '').trim();
-      const room = rooms.get(password);
-
-      if (!/^\d{6}$/.test(password) || !room) {
-        return send(ws, { type: 'error', message: 'そのパスワードの部屋はありません。' });
-      }
-      if (room.guest) {
-        return send(ws, { type: 'error', message: 'この部屋は満員です。' });
-      }
-
-      removeFromRoom(ws, false);
-      room.guest = ws;
-      ws.room = password;
-      ws.role = 2;
-
-      send(ws, { type: 'roomJoined', role: 2, room: password, password });
-      send(room.host, { type: 'peerJoined' });
-      send(room.guest, { type: 'start' });
-      console.log(`ルーム参加: ${password}`);
-      return;
-    }
-
-    if (!ws.room) return send(ws, { type: 'error', message: '先に部屋へ参加してください。' });
-    const room = rooms.get(ws.room);
-    if (!room) return;
-
-    if (msg.type === 'state' && ws.role === 1) {
-      if (!msg.state || typeof msg.state !== 'object') return;
-      send(room.guest, { type: 'state', state: msg.state });
-      return;
-    }
-
-    if (msg.type === 'input' && ws.role === 2) {
-      if (typeof msg.action !== 'string') return;
-      // 許可した操作だけをホストへ転送する。
-      const allowed = new Set([
-        'rotateRight', 'rotateLeft', 'hardDrop',
-        'hold', 'pause', 'nextRound'
-      ]);
-      if (!allowed.has(msg.action)) return;
-      send(room.host, { type: 'remoteAction', action: msg.action });
-      return;
-    }
-
-    if (msg.type === 'inputState' && ws.role === 2) {
-      const s = (msg.state && typeof msg.state === 'object') ? msg.state : {};
-      send(room.host, {
-        type: 'remoteInputState',
-        state: {
-          left: !!s.left,
-          right: !!s.right,
-          down: !!s.down
+        try {
+            data = JSON.parse(message.toString());
+        } catch (e) {
+            console.log('JSON解析エラー');
+            return;
         }
-      });
-      return;
-    }
-  });
 
-  ws.on('close', () => removeFromRoom(ws, true));
-  ws.on('error', () => removeFromRoom(ws, true));
+        // =========================
+        // ルーム作成
+        // =========================
+        if (data.type === 'create') {
+            let password = String(data.password || '');
+
+            // パスワードが不正なら自動生成
+            if (!/^\d{6}$/.test(password) || rooms.has(password)) {
+                password = makePassword();
+            }
+
+            rooms.set(password, {
+                host: ws,
+                guest: null
+            });
+
+            currentRoom = password;
+            myRole = 1;
+
+            ws.send(JSON.stringify({
+                type: 'roomJoined',
+                role: 1,
+                room: password,
+                password: password
+            }));
+
+            console.log(`ルーム作成: ${password} (Host)`);
+        }
+
+        // =========================
+        // ルーム参加
+        // =========================
+        else if (data.type === 'join') {
+            const password = String(data.password || data.room || '');
+
+            const room = rooms.get(password);
+
+            if (!room) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'そのパスワードのルームがありません'
+                }));
+                return;
+            }
+
+            if (room.guest) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'ルームは満員です'
+                }));
+                return;
+            }
+
+            room.guest = ws;
+
+            currentRoom = password;
+            myRole = 2;
+
+            ws.send(JSON.stringify({
+                type: 'roomJoined',
+                role: 2,
+                room: password,
+                password: password
+            }));
+
+            console.log(`ルーム参加: ${password} (Guest)`);
+
+            // 両者に対戦開始を通知
+            room.host.send(JSON.stringify({
+                type: 'peerJoined'
+            }));
+
+            room.guest.send(JSON.stringify({
+                type: 'start'
+            }));
+        }
+
+        // =========================
+        // ゲスト → ホスト：操作
+        // =========================
+        else if (data.type === 'input') {
+            const room = rooms.get(currentRoom);
+
+            if (room && room.host) {
+                room.host.send(JSON.stringify({
+                    type: 'remoteAction',
+                    action: data.action
+                }));
+            }
+        }
+
+        // =========================
+        // ゲスト → ホスト：入力状態
+        // =========================
+        else if (data.type === 'inputState') {
+            const room = rooms.get(currentRoom);
+
+            if (room && room.host) {
+                room.host.send(JSON.stringify({
+                    type: 'remoteInputState',
+                    state: data.state
+                }));
+            }
+        }
+
+        // =========================
+        // ホスト → ゲスト：ゲーム状態
+        // =========================
+        else if (data.type === 'state') {
+            const room = rooms.get(currentRoom);
+
+            if (room && room.guest) {
+                room.guest.send(JSON.stringify({
+                    type: 'state',
+                    state: data.state
+                }));
+            }
+        }
+    });
+
+    // =========================
+    // 切断
+    // =========================
+    ws.on('close', () => {
+        if (!currentRoom) return;
+
+        const room = rooms.get(currentRoom);
+
+        if (!room) return;
+
+        console.log(
+            `切断: ${currentRoom} (Role: ${myRole})`
+        );
+
+        if (myRole === 1) {
+            if (room.guest) {
+                room.guest.send(JSON.stringify({
+                    type: 'peerLeft'
+                }));
+            }
+
+            rooms.delete(currentRoom);
+        }
+
+        else if (myRole === 2) {
+            if (room.host) {
+                room.host.send(JSON.stringify({
+                    type: 'peerLeft'
+                }));
+            }
+
+            room.guest = null;
+        }
+    });
 });
 
+// ===============================
+// サーバー起動
+// ===============================
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Tetris オンライン用サーバーが http://localhost:${PORT} で起動しました。`);
+    console.log(
+        `Tetris オンライン用サーバーが http://localhost:${PORT} で起動しました。`
+    );
 });
+
