@@ -339,94 +339,19 @@ function drawOnlineFourPlayerScreen() {
   background(18,18,30);
   const roles = [];
   for (let r=1; r<=onlinePlayerCount; r++) roles.push(r);
-  textAlign(CENTER, CENTER);
-
-  // 3人・4人では「自分を左に大きく、相手を右に縦並び」にする。
-  if (onlinePlayerCount >= 3) {
-    const opponents = roles.filter(r => r !== onlineRole);
-    const leftX = 28;
-    const leftY = 70;
-    const leftW = Math.min(width * 0.54, 420);
-    const leftCell = Math.max(10, Math.min(24, Math.floor(leftW / RETSU)));
-    const leftBW = RETSU * leftCell;
-    const leftBH = GYO * leftCell;
-    const rightX = Math.min(width * 0.60, leftX + leftBW + 34);
-    const rightW = Math.max(110, width - rightX - 24);
-    const rightCell = Math.max(7, Math.min(13, Math.floor(Math.min(rightW, 190) / RETSU)));
-    const rightBW = RETSU * rightCell;
-    const rightBH = GYO * rightCell;
-    const rightGap = 10;
-    const availableH = height - 88;
-    const cardH = Math.min(rightBH + 28, Math.max(70, Math.floor((availableH - rightGap * (opponents.length - 1)) / opponents.length)));
-
-    function getOnlineBoard(role) {
-      if (role === onlineRole) {
-        return {
-          board: role === 1 ? gameBoard : gameBoardP2,
-          block: role === 1 ? imaNoBurokku : imaNoBurokkuP2
-        };
-      }
-      const st = onlineRemoteStates[role];
-      return {
-        board: st && st.board ? st.board : Array.from({length:GYO},()=>new Array(RETSU).fill(0)),
-        block: st && st.block ? st.block : null
-      };
-    }
-
-    // 左：自分の盤面を大きく表示
-    const me = getOnlineBoard(onlineRole);
-    push();
-    translate(leftX, leftY);
-    fill(10,10,20,220); noStroke(); rect(0,0,leftBW,leftBH);
-    stroke(80); noFill(); rect(0,0,leftBW,leftBH);
-    for(let gx=0;gx<=RETSU;gx++) line(gx*leftCell,0,gx*leftCell,leftBH);
-    for(let gy=0;gy<=GYO;gy++) line(0,gy*leftCell,leftBW,gy*leftCell);
-    drawOnlineScaledBoard(me.board,leftCell);
-    if(me.block) drawOnlineScaledBlock(me.block,leftCell);
-    pop();
-    noStroke(); fill(255); textSize(22); text(`PLAYER ${onlineRole}`, leftX+leftBW/2, leftY-30);
-
-    // 右：相手の盤面だけを縦に並べ、各盤面の上にPLAYER番号だけ表示
-    const rightStartY = 48;
-    for(let i=0;i<opponents.length;i++) {
-      const role = opponents[i];
-      const st = getOnlineBoard(role);
-      const cardY = rightStartY + i * (cardH + rightGap);
-      const boardX = rightX + Math.max(0, (rightW-rightBW)/2);
-      const boardY = cardY + 24;
-      fill(255); textSize(15); text(`PLAYER ${role}`, boardX+rightBW/2, cardY+10);
-      push();
-      translate(boardX, boardY);
-      fill(10,10,20,220); noStroke(); rect(0,0,rightBW,rightBH);
-      stroke(70); noFill(); rect(0,0,rightBW,rightBH);
-      for(let gx=0;gx<=RETSU;gx++) line(gx*rightCell,0,gx*rightCell,rightBH);
-      for(let gy=0;gy<=GYO;gy++) line(0,gy*rightCell,rightBW,gy*rightCell);
-      drawOnlineScaledBoard(st.board,rightCell);
-      if(st.block) drawOnlineScaledBlock(st.block,rightCell);
-      pop();
-    }
-
-    // 3/4人UIでは、盤面以外の情報を極力出さずゲーム画面を優先。
-    if (isRoundOver) {
-      fill(0,0,0,175); rect(0,0,width,height);
-      fill(255); textSize(28);
-      if (isMatchOver && onlineMatchWinnerRole) text(`PLAYER ${onlineMatchWinnerRole} WINS MATCH!`,width/2,height/2-20);
-      else if (onlineRoundWinnerRole) text(`PLAYER ${onlineRoundWinnerRole} WINS ROUND!`,width/2,height/2-20);
-      textSize(17); text('Rotate / A / C で次へ',width/2,height/2+25);
-    }
-    return;
-  }
-
-  // 2人時は従来の左右2画面UIを維持
-  const cols = 2;
-  const gapX = 12;
-  const cell = 22;
+  const cols = onlinePlayerCount <= 2 ? 2 : 2;
+  const rows = onlinePlayerCount <= 2 ? 1 : 2;
+  const gapX = 12, gapY = 18;
+  const cell = onlinePlayerCount <= 2 ? 22 : 17;
   const bw = RETSU * cell, bh = GYO * cell;
-  const totalW = cols * bw + gapX;
+  const totalW = cols * bw + (cols-1)*gapX;
   const startX = (width-totalW)/2;
   const topY = 52;
+  textAlign(CENTER, CENTER);
+  textSize(16);
   for (let i=0;i<roles.length;i++) {
-    const role=roles[i], x=startX+i*(bw+gapX), y=topY;
+    const role=roles[i], col=i%cols, row=floor(i/cols);
+    const x=startX+col*(bw+gapX), y=topY+row*(bh+58+gapY);
     const local = role===onlineRole;
     let board, block;
     if (local) {
@@ -441,12 +366,16 @@ function drawOnlineFourPlayerScreen() {
     translate(x,y);
     fill(10,10,20,220); noStroke(); rect(0,0,bw,bh);
     stroke(80); noFill(); rect(0,0,bw,bh);
-    for(let gx=0;gx<=RETSU;gx++) line(gx*cell,0,gx*cell,bh);
-    for(let gy=0;gy<=GYO;gy++) line(0,gy*cell,bw,gy*cell);
+    for(let gx=0;gx<=RETSU;gx++){ line(gx*cell,0,gx*cell,bh); }
+    for(let gy=0;gy<=GYO;gy++){ line(0,gy*cell,bw,gy*cell); }
     drawOnlineScaledBoard(board,cell);
     if(block) drawOnlineScaledBlock(block,cell);
     pop();
-    noStroke(); fill(local?255:210); textSize(16); text(`PLAYER ${role}${local?'  YOU':''}`, x+bw/2, y-20);
+    noStroke(); fill(local?255:210); text(`PLAYER ${role}${local?'  YOU':''}`, x+bw/2, y-20);
+    const st=local ? null : onlineRemoteStates[role];
+    const score=local ? (role===1?sukoa:cpuScore) : (st?Number(st.score)||0:0);
+    const alive=local ? !isRoundOver : !!(onlineAlive[role] !== false);
+    fill(220); text(`${alive?'ONLINE':'OUT'}   SCORE ${score}`, x+bw/2, y+bh+20);
   }
   fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${onlinePlayerCount} PLAYERS`, width/2, 18);
   if (onlineStatus) { textSize(13); fill(190); text(onlineStatus,width/2,height-18); }
@@ -458,7 +387,6 @@ function drawOnlineFourPlayerScreen() {
     textSize(17); text('Rotate / A / C で次へ',width/2,height/2+25);
   }
 }
-
 function drawOnlineScaledBoard(board,cell) {
   if(!Array.isArray(board)) return;
   for(let y=0;y<GYO;y++) for(let x=0;x<RETSU;x++) if(board[y] && board[y][x]) {
@@ -1667,6 +1595,54 @@ function isPerfectClear(board) {
     return true;
 }
 
+// ぷよテト2準拠のRENボーナス。
+// 1～2RENは+0、3RENから+1ずつ増え、
+// 11～12RENは+4、13REN以降は+5。
+const PUYOTETO2_REN_ATTACK = [
+    0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 4, 5
+];
+
+function getPuyoTeto2RenAttack(ren) {
+    if (ren <= 0) return 0;
+    return PUYOTETO2_REN_ATTACK[Math.min(ren, PUYOTETO2_REN_ATTACK.length - 1)];
+}
+
+// T-Spinの4隅を調べ、ぷよテト2系のMini/通常を判定する。
+// 3隅が埋まっていて、回転方向の前側2隅が両方埋まっていれば通常T-Spin、
+// 片方でも空いていればT-Spin Miniとして扱う。
+function detectTSpin(board, burokku) {
+    if (!burokku || burokku.type !== 6) return { isTSpin: false, isTSpinMini: false };
+
+    const corners = [
+        {x: burokku.x,     y: burokku.y},
+        {x: burokku.x + 2, y: burokku.y},
+        {x: burokku.x,     y: burokku.y + 2},
+        {x: burokku.x + 2, y: burokku.y + 2}
+    ];
+
+    const blocked = corners.map(c => {
+        if (c.x < 0 || c.x >= RETSU || c.y < 0 || c.y >= GYO) return true;
+        return board[c.y][c.x] !== 0;
+    });
+
+    const count = blocked.filter(Boolean).length;
+    if (count < 3) return { isTSpin: false, isTSpinMini: false };
+
+    // rotation 0: 下2隅、1: 左2隅、2: 上2隅、3: 右2隅がfront。
+    const frontPairs = [
+        [2, 3],
+        [0, 2],
+        [0, 1],
+        [1, 3]
+    ];
+    const front = frontPairs[burokku.rotation % 4];
+    const frontBlocked = blocked[front[0]] && blocked[front[1]];
+
+    return frontBlocked
+        ? { isTSpin: true, isTSpinMini: false }
+        : { isTSpin: false, isTSpinMini: true };
+}
+
 
 // koteiBurokku を playerIndex (1, 2, 0) に対応
 function koteiBurokku(playerIndex) {
@@ -1695,33 +1671,15 @@ function koteiBurokku(playerIndex) {
     action = 'HARD_DROP'; 
   }
  
-  // --- T-Spin 判定 ---
+  // --- T-Spin / T-Spin Mini 判定 ---
   let isTSpin = false;
+  let isTSpinMini = false;
   if (burokku.type === 6 && action === 'ROTATE') {
-    let cornerChecks = 0;
-    const corners = [
-        {x: burokku.x + 0, y: burokku.y + 0},
-        {x: burokku.x + 2, y: burokku.y + 0},
-        {x: burokku.x + 0, y: burokku.y + 2},
-        {x: burokku.x + 2, y: burokku.y + 2}
-    ];
-    for (const c of corners) {
-        let blocked = false;
-        if (c.x < 0 || c.x >= RETSU || c.y >= GYO) {
-            blocked = true;
-        } 
-        else if (c.y >= 0 && board[c.y] && board[c.y][c.x] !== 0) {
-            blocked = true;
-        }
-        if (blocked) {
-            cornerChecks++;
-        }
-    }
-    if (cornerChecks >= 3) {
-      isTSpin = true;
-    }
+    const spin = detectTSpin(board, burokku);
+    isTSpin = spin.isTSpin;
+    isTSpinMini = spin.isTSpinMini;
   }
-  // --- T-Spin 判定 終わり ---
+  // --- T-Spin / T-Spin Mini 判定 終わり ---
 
 
   // ブロックを固定する
@@ -1783,7 +1741,7 @@ function koteiBurokku(playerIndex) {
   // (VS_CPU / VS_LOCAL のみ)
   let currentAttack = 0;
   let isTetris = (linesCleared === 4);
-  let isSpecialClear = isTSpin; 
+  let isSpecialClear = isTSpin || isTSpinMini || isTetris;
 
   let currentScore = (playerIndex === 1) ? sukoa : cpuScore;
   let currentAttackPower = (playerIndex === 1) ? attackPower : cpuAttackPower;
@@ -1791,39 +1749,53 @@ function koteiBurokku(playerIndex) {
   let currentComboCount = (playerIndex === 1) ? comboCount : cpuComboCount;
  
   if (linesCleared > 0) {
-    currentComboCount++; 
-   
-    // 1. スコア計算と基本AP
+    currentComboCount++;
+
+    // 1. ぷよテト2準拠の基本攻撃力
+    // T-Spin Mini = 0 / Single = 2 / Double = 4 / Triple = 6
+    // Tetris = 4
     if (isTSpin) {
       if (linesCleared === 1) { currentAttack = 2; currentScore += 800; }
       else if (linesCleared === 2) { currentAttack = 4; currentScore += 1200; }
       else if (linesCleared === 3) { currentAttack = 6; currentScore += 1600; }
-      else if (linesCleared === 0) { currentAttack = 0; currentScore += 100; }
+    } else if (isTSpinMini) {
+      currentAttack = 0;
+      if (linesCleared === 1) currentScore += 200;
     } else {
       currentAttack = ATTACK_TABLE[linesCleared] || 0;
       if (linesCleared === 1) { currentScore += 100; }
       else if (linesCleared === 2) { currentScore += 300; }
       else if (linesCleared === 3) { currentScore += 500; }
-      else if (linesCleared === 4) { isSpecialClear = true; currentScore += 800; }
+      else if (linesCleared === 4) { currentScore += 800; }
     }
-   
-    // 2. コンボボーナス
-    if (currentComboCount > 1) {
-        currentAttack += floor((currentComboCount - 1) / 2);
-    }
-   
+
+    // 2. RENボーナス（ぷよテト2 Ver.1.3.2系）
+    currentAttack += getPuyoTeto2RenAttack(currentComboCount);
+
     // 3. B2Bボーナス
+    // Tetris / T-Spin / T-Spin MiniがB2B対象。
+    // Perfect Clearは後段で攻撃力を10に固定するため、ここでは加算しない。
     if (isSpecialClear) {
         if (currentBackToBack > 0) {
-            currentAttack += 1; 
+            currentAttack += 1;
             currentBackToBack++;
         } else {
             currentBackToBack = 1;
         }
-    } else if (linesCleared > 0 && !isSpecialClear) {
-        currentBackToBack = 0; 
+    } else {
+        currentBackToBack = 0;
     }
 
+  } else if (isTSpinMini) {
+    // ラインを消さないT-Spin MiniもB2B継続対象。
+    // RENは継続しないので、ここでは+1だけ。
+    if (currentBackToBack > 0) {
+      currentAttack = 1;
+      currentBackToBack++;
+    } else {
+      currentBackToBack = 1;
+    }
+    currentAttack += getPuyoTeto2RenAttack(currentComboCount);
   } else {
     // ★★★ ぷよテト式ルール: RENが途切れたら攻撃 ★★★
     if (currentComboCount > 0) { 
@@ -1833,9 +1805,10 @@ function koteiBurokku(playerIndex) {
     // ▲▲▲
   }
  
-  // --- パーフェクトクリア (PC) ボーナス ---
+  // --- パーフェクトクリア (PC) ---
+  // ぷよテト2ではPCの攻撃力はライン数やREN/B2Bによらず10。
   if (linesCleared > 0 && isPerfectClear(board)) {
-      currentAttack += 10;
+      currentAttack = 10;
       currentScore += 2000;
   }
  
