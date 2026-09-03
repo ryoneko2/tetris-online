@@ -1853,7 +1853,7 @@ function connectOnlineSocket(action) {
               onlinePendingState = null;
               onlineStateApplyTimer = null;
               if (pending) applyOnlineState(pending);
-            }, 80);
+            }, 40);
           }
         }
       }
@@ -1911,7 +1911,7 @@ function sendOnlineAction(action) {
 function handleOnlineGuestInput() {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
   const now = millis();
-  if (now - onlineLastInputSend < 30) return;
+  if (now - onlineLastInputSend < 20) return;
   onlineLastInputSend = now;
 
   if (onlineSocket.bufferedAmount > 64 * 1024) return;
@@ -2056,7 +2056,7 @@ function serializeOnlineState() {
 function sendOnlineState(force=false) {
   if (onlineRole !== 1 || !onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
   const now = millis();
-  if (!force && now - onlineLastStateSend < 150) return;
+  if (!force && now - onlineLastStateSend < 60) return;
   // WebSocket送信待ちが膨らんだら新しい状態を優先して一旦捨てる。
   if (onlineSocket.bufferedAmount > 256 * 1024) return;
   onlineLastStateSend = now;
