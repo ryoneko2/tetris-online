@@ -11,14 +11,19 @@ const MIME = {'.html':'text/html; charset=utf-8','.js':'application/javascript; 
 function send(ws,msg){ if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(msg)); }
 function broadcast(room,msg,except=null){ for(const p of room.players) if(p && p!==except) send(p.ws,msg); }
 function snapshot(room){
-  const scores={}; const alive={};
-  for(const p of room.players){ if(!p) continue; scores[p.role]=p.wins||0; alive[p.role]=p.alive!==false; }
-  return {scores,alive};
+  const scores={}; const alive={}; const names={};
+  for(const p of room.players){ if(!p) continue; scores[p.role]=p.wins||0; alive[p.role]=p.alive!==false; names[p.role]=p.name||('PLAYER '+p.role); }
+  return {scores,alive,names};
 }
 function roomStatus(room){
   const st=snapshot(room); return {type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:!!room.started,scores:st.scores,alive:st.alive};
 }
 function makePassword(){ let p; do p=String(Math.floor(100000+Math.random()*900000)); while(rooms.has(p)); return p; }
+function cleanName(name,fallback){
+  let s=String(name||'').trim().replace(/[<>]/g,'');
+  if(!s) s=fallback;
+  return Array.from(s).slice(0,16).join('');
+}
 function removePlayer(ws,notify=true){
   const room=ws.room; if(!room) return;
   const idx=room.players.findIndex(p=>p.ws===ws);
@@ -50,7 +55,7 @@ wss.on('connection',ws=>{
       const n=[2,3,4].includes(Number(msg.playerCount))?Number(msg.playerCount):2;
       const room={password,playerCount:n,players:[],started:false,roundOver:false};
       rooms.set(password,room);
-      const player={ws,role:1,wins:0,alive:true}; room.players.push(player); ws.room=room; ws.role=1;
+      const player={ws,role:1,wins:0,alive:true,name:cleanName(msg.name, 'PLAYER 1')}; room.players.push(player); ws.room=room; ws.role=1;
       send(ws,{type:'roomJoined',role:1,room:password,password,playerCount:n,...snapshot(room)});
       send(ws,roomStatus(room));
       console.log(`ルーム作成: ${password} (${n}人)`);
@@ -64,7 +69,7 @@ wss.on('connection',ws=>{
       removePlayer(ws,false);
       const used=new Set(room.players.map(p=>p.role)); let role=0; for(let r=1;r<=room.playerCount;r++) if(!used.has(r)){role=r;break;}
       if(!role) return send(ws,{type:'error',message:'この部屋は満員です。'});
-      const player={ws,role,wins:0,alive:true}; room.players.push(player); ws.room=room; ws.role=role;
+      const player={ws,role,wins:0,alive:true,name:cleanName(msg.name, `PLAYER ${role}`)}; room.players.push(player); ws.room=room; ws.role=role;
       send(ws,{type:'roomJoined',role,room:password,password,playerCount:room.playerCount,...snapshot(room)});
       broadcast(room,roomStatus(room));
       console.log(`ルーム参加: ${password} PLAYER ${role} (${room.players.length}/${room.playerCount})`);
