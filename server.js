@@ -21,8 +21,16 @@ const MIME = {
 };
 
 function send(ws, message) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+  try {
+    // 相手側の送信キューが異常に膨らんだら古い状態を積み続けない。
+    if (ws.bufferedAmount > 1024 * 1024) return false;
+
     ws.send(JSON.stringify(message));
+    return true;
+  } catch (err) {
+    return false;
   }
 }
 
@@ -131,17 +139,33 @@ wss.on('connection', (ws) => {
     if (!room) return;
 
     if (msg.type === 'state' && ws.role === 1) {
+      if (!msg.state || typeof msg.state !== 'object') return;
       send(room.guest, { type: 'state', state: msg.state });
       return;
     }
 
     if (msg.type === 'input' && ws.role === 2) {
+      if (typeof msg.action !== 'string') return;
+      // 許可した操作だけをホストへ転送する。
+      const allowed = new Set([
+        'rotateRight', 'rotateLeft', 'hardDrop',
+        'hold', 'pause', 'nextRound'
+      ]);
+      if (!allowed.has(msg.action)) return;
       send(room.host, { type: 'remoteAction', action: msg.action });
       return;
     }
 
     if (msg.type === 'inputState' && ws.role === 2) {
-      send(room.host, { type: 'remoteInputState', state: msg.state });
+      const s = (msg.state && typeof msg.state === 'object') ? msg.state : {};
+      send(room.host, {
+        type: 'remoteInputState',
+        state: {
+          left: !!s.left,
+          right: !!s.right,
+          down: !!s.down
+        }
+      });
       return;
     }
   });
