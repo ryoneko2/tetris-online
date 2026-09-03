@@ -1846,15 +1846,11 @@ function connectOnlineSocket(action) {
       if (onlineRole === 2 && msg.state && typeof msg.state === 'object') {
         const seq = Number(msg.state.seq || 0);
         if (!seq || seq > onlineLastAppliedSeq) {
-          onlinePendingState = msg.state;
-          if (!onlineStateApplyTimer) {
-            onlineStateApplyTimer = setTimeout(() => {
-              const pending = onlinePendingState;
-              onlinePendingState = null;
-              onlineStateApplyTimer = null;
-              if (pending) applyOnlineState(pending);
-            }, 40);
-          }
+          // ゲスト側は受信した最新状態を即時反映。
+          // ここで待ち時間を入れると、ゲストの操作が「ホストに合わせて遅れて動く」原因になる。
+          onlinePendingState = null;
+          if (onlineStateApplyTimer) { clearTimeout(onlineStateApplyTimer); onlineStateApplyTimer = null; }
+          applyOnlineState(msg.state);
         }
       }
       return;
@@ -1911,7 +1907,7 @@ function sendOnlineAction(action) {
 function handleOnlineGuestInput() {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
   const now = millis();
-  if (now - onlineLastInputSend < 20) return;
+  if (now - onlineLastInputSend < 10) return;
   onlineLastInputSend = now;
 
   if (onlineSocket.bufferedAmount > 64 * 1024) return;
@@ -2056,7 +2052,7 @@ function serializeOnlineState() {
 function sendOnlineState(force=false) {
   if (onlineRole !== 1 || !onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
   const now = millis();
-  if (!force && now - onlineLastStateSend < 60) return;
+  if (!force && now - onlineLastStateSend < 30) return;
   // WebSocket送信待ちが膨らんだら新しい状態を優先して一旦捨てる。
   if (onlineSocket.bufferedAmount > 256 * 1024) return;
   onlineLastStateSend = now;
