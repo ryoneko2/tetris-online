@@ -33,7 +33,7 @@ var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlineMatchStartRequested = false;
 var onlineJoinedCount = 0;
-const ONLINE_BUILD_VERSION = 'HOSTSTART-20260904-11';
+const ONLINE_BUILD_VERSION = 'HOSTSTART-20260904-12';
 var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
@@ -1103,6 +1103,26 @@ function drawTitleScreen() {
             text('ROOM: ' + onlineRoom, width / 2, 685);
         }
     }
+
+    // 人数がそろったホストだけ、タイトル画面上にSTARTボタンを表示する。
+    const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
+    if (onlineRoom && onlineRole === 1 && onlineJoinedCount >= onlineCount && !onlineMatchStarted) {
+        const bx = width / 2 - 160;
+        const by = 715;
+        const bw = 320;
+        const bh = 58;
+        stroke(255, 255, 0);
+        strokeWeight(3);
+        fill(45, 125, 75);
+        rect(bx, by, bw, bh, 10);
+        noStroke();
+        fill(255);
+        textSize(24);
+        text('対戦を開始する（START）', width / 2, by + bh / 2);
+        fill(220);
+        textSize(12);
+        text('ホストだけが押せます', width / 2, by + bh + 16);
+    }
 }
 // ▲▲▲
 
@@ -1504,6 +1524,19 @@ function handlePlayer2Input() {
 // モード選択のクリック/タッチ処理
 function handleTitlePointer(px, py) {
   if (gameMode !== 'TITLE') return false;
+
+  // オンラインのホストは、人数がそろったらSTARTボタンを押して開始する。
+  const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
+  if (onlineRoom && onlineRole === 1 && onlineJoinedCount >= onlineCount && !onlineMatchStarted) {
+    const bx = width / 2 - 160;
+    const by = 715;
+    const bw = 320;
+    const bh = 58;
+    if (px >= bx && px <= bx + bw && py >= by && py <= by + bh) {
+      requestOnlineMatchStart();
+      return true;
+    }
+  }
 
   const btnWidth = 250;
   const btnHeight = 50;
