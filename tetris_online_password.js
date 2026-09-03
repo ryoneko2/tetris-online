@@ -2522,6 +2522,9 @@ function keyPressed() {
       if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW || key === 'w' || key === 'W' || key === 'a' || key === 'A' || key === 'c' || key === 'C') sendOnlineAction('nextRound');
       return false;
     }
+    // 通常のオンライン操作は下のwindow.keydownだけで処理する。
+    // p5.jsのkeyPressedも同時に実行すると、W等が二重発火するためここでは止める。
+    return false;
     if (key === 'a' || key === 'A') {
       const now = millis();
       moveLeft(1); dasStartTimeLeft = now; arrTimeLeft = now;
