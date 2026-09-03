@@ -32,6 +32,7 @@ var onlineRole = 0; // 1 = ホスト(P1), 2 = ゲスト(P2)
 var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlineMatchStartRequested = false;
+var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
 var onlineRoundWinnerRole = 0;
@@ -1990,6 +1991,8 @@ function connectOnlineSocket(action) {
     try { msg = JSON.parse(event.data); } catch (e) { return; }
 
     if (msg.type === 'roomJoined') {
+      onlineMatchStarted = false;
+      onlineMatchStartRequested = false;
       onlineRole = Number(msg.role) || 0;
       onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount || 2;
       onlineRoom = String(msg.password || msg.room || onlineRoom);
@@ -2011,15 +2014,10 @@ function connectOnlineSocket(action) {
       onlineAlive = msg.alive || onlineAlive || {};
       if (joinedCount >= onlinePlayerCount) {
         onlineStatus = '人数がそろいました。対戦を開始しています...';
-        // サーバーからstartが届かない場合でも、満員通知を受けた全員が
-        // 同じローカル開始処理へ進める。二重実行はフラグで防止する。
-        if (!onlineMatchStartRequested && !isStarted) {
+        // 満員通知だけでも必ず開始する。gameMode/isStartedの状態には依存しない。
+        if (!onlineMatchStarted && !onlineMatchStartRequested && onlineRole >= 1) {
           onlineMatchStartRequested = true;
-          setTimeout(() => {
-            if (gameMode === 'ONLINE' && onlineRole >= 1 && !isStarted && !isRoundOver && !isMatchOver) {
-              beginOnlineMatchLocal();
-            }
-          }, 250);
+          beginOnlineMatchLocal();
         }
       } else {
         onlineStatus = `参加者 ${joinedCount}/${onlinePlayerCount}人`;
@@ -2093,6 +2091,7 @@ function connectOnlineSocket(action) {
     }
 
     if (msg.type === 'peerLeft') {
+      if (!onlineMatchStarted) onlineMatchStartRequested = false;
       onlineOpponentConnected = false;
       onlineStatus = '参加者が切断しました';
       if (gameMode === 'ONLINE') isPaused = true;
@@ -2121,7 +2120,8 @@ function connectOnlineSocket(action) {
 }
 
 function beginOnlineMatchLocal() {
-  if (onlineRole < 1) return;
+  if (onlineRole < 1 || onlineMatchStarted) return;
+  onlineMatchStarted = true;
   onlineMatchStartRequested = true;
   onlineRoundWinnerRole = 0;
   onlineMatchWinnerRole = 0;
