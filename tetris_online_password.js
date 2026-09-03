@@ -31,6 +31,7 @@ var onlineSocket = null;
 var onlineRole = 0; // 1 = ホスト(P1), 2 = ゲスト(P2)
 var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
+var onlineMatchStartRequested = false;
 var onlineScores = {};
 var onlineAlive = {};
 var onlineRoundWinnerRole = 0;
@@ -2006,11 +2007,23 @@ function connectOnlineSocket(action) {
     if (msg.type === 'roomStatus') {
       onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount;
       const joinedCount = Number(msg.count) || 0;
-      onlineStatus = joinedCount >= onlinePlayerCount
-        ? '人数がそろいました。対戦を開始しています...'
-        : `参加者 ${joinedCount}/${onlinePlayerCount}人`;
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || onlineAlive || {};
+      if (joinedCount >= onlinePlayerCount) {
+        onlineStatus = '人数がそろいました。対戦を開始しています...';
+        // サーバーからstartが届かない場合でも、満員通知を受けた全員が
+        // 同じローカル開始処理へ進める。二重実行はフラグで防止する。
+        if (!onlineMatchStartRequested && !isStarted) {
+          onlineMatchStartRequested = true;
+          setTimeout(() => {
+            if (gameMode === 'ONLINE' && onlineRole >= 1 && !isStarted && !isRoundOver && !isMatchOver) {
+              beginOnlineMatchLocal();
+            }
+          }, 250);
+        }
+      } else {
+        onlineStatus = `参加者 ${joinedCount}/${onlinePlayerCount}人`;
+      }
       return;
     }
 
@@ -2018,19 +2031,7 @@ function connectOnlineSocket(action) {
       onlinePlayerCount = Number(msg.playerCount) || onlinePlayerCount || 2;
       onlineScores = msg.scores || {};
       onlineAlive = msg.alive || {};
-      onlineRoundWinnerRole = 0;
-      onlineMatchWinnerRole = 0;
-      onlineRemoteStates = {};
-      onlineRoundReadySent = false;
-      gameMode = 'ONLINE';
-      onlineGuestInitialized = false;
-      onlineLastAppliedSeq = 0;
-      onlineInitialStateSent = false;
-      restartGame();
-      gameMode = 'ONLINE';
-      nextRound();
-      onlineStatus = '対戦開始！';
-      sendLocalOnlineState(true);
+      beginOnlineMatchLocal();
       return;
     }
 
@@ -2117,6 +2118,24 @@ function connectOnlineSocket(action) {
   onlineSocket.onerror = () => {
     onlineStatus = 'オンライン接続エラー';
   };
+}
+
+function beginOnlineMatchLocal() {
+  if (onlineRole < 1) return;
+  onlineMatchStartRequested = true;
+  onlineRoundWinnerRole = 0;
+  onlineMatchWinnerRole = 0;
+  onlineRemoteStates = {};
+  onlineRoundReadySent = false;
+  gameMode = 'ONLINE';
+  onlineGuestInitialized = false;
+  onlineLastAppliedSeq = 0;
+  onlineInitialStateSent = false;
+  restartGame();
+  gameMode = 'ONLINE';
+  nextRound();
+  onlineStatus = '対戦開始！';
+  sendLocalOnlineState(true);
 }
 
 function sendOnlineAction(action, extra = {}) {
