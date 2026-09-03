@@ -3355,20 +3355,3 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
   });
   window.addEventListener('blur',()=>{onlineGuestKeyState.left=false;onlineGuestKeyState.right=false;onlineGuestKeyState.down=false;});
 })();
-
-(function setupOnlineMobileControls(){
-  function makeButton(text,cls,down,up){
-    const b=document.createElement('button'); b.textContent=text; b.style.cssText='touch-action:none;user-select:none;font-size:18px;font-weight:bold;min-width:58px;min-height:48px;border-radius:10px;border:1px solid #777;background:rgba(30,30,40,.92);color:white;';
-    b.addEventListener('pointerdown',e=>{e.preventDefault();down();}); b.addEventListener('pointerup',e=>{e.preventDefault();if(up)up();}); b.addEventListener('pointercancel',e=>{if(up)up();}); return b;
-  }
-  const panel=document.createElement('div'); panel.id='online-mobile-controls'; panel.style.cssText='position:fixed;left:50%;bottom:8px;transform:translateX(-50%);z-index:9999;display:none;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;width:min(96vw,430px);padding:6px;box-sizing:border-box;';
-  const set=(k,v)=>onlineGuestKeyState[k]=v;
-  panel.appendChild(makeButton('←','',()=>set('left',true),()=>set('left',false)));
-  panel.appendChild(makeButton('↓','',()=>set('down',true),()=>set('down',false)));
-  panel.appendChild(makeButton('→','',()=>set('right',true),()=>set('right',false)));
-  panel.appendChild(makeButton('↻','',()=>{rotateRight(1);sendOnlineAction('rotateRight');}));
-  panel.appendChild(makeButton('DROP','',()=>{hardDrop(1);sendOnlineAction('hardDrop');}));
-  panel.appendChild(makeButton('HOLD','',()=>{horudoSuru(1);sendOnlineAction('hold');}));
-  document.body.appendChild(panel);
-  setInterval(()=>{panel.style.display=(typeof gameMode!=='undefined'&&gameMode==='ONLINE'&&typeof onlineRole!=='undefined'&&onlineRole>=1)?'flex':'none';},100);
-})();
