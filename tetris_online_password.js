@@ -21,6 +21,7 @@ const TOTAL_WIDTH_RETSU = UI_RETSU + RETSU + UI_RETSU + UI_RETSU + RETSU + UI_RE
 // --- ▲▲▲ ---
 
 var gameMode = 'TITLE'; // 'TITLE', 'SOLO', 'VS_LOCAL', 'VS_CPU', 'ONLINE'
+var gameCanvas = null;
 
 // --- オンライン対戦 (WebSocket) ---
 // ローカルテスト: ws://localhost:8080
@@ -189,6 +190,7 @@ const I_KICK_DATA = [
 function setup() {
   // ▼▼▼ 修正点 2 (テトリス25): キャンバスサイズを変更 (36 * 22 = 792) ▼▼▼
   const canvas = createCanvas(TOTAL_WIDTH_RETSU * BLOKU_SAIZU, 810);
+  gameCanvas = canvas;
   // スマホのタッチをブラウザのスクロール/ズームとして処理させず、
   // p5.js の touchStarted() に確実に渡す。
   if (canvas && canvas.elt) {
@@ -1304,15 +1306,49 @@ function handleTitlePointer(px, py) {
   return false;
 }
 
-function mousePressed() {
-  if (handleTitlePointer(mouseX, mouseY)) return false;
+function mousePressed(event) {
+  if (gameMode !== 'TITLE') return;
+  const cnv = (gameCanvas && gameCanvas.elt) ? gameCanvas.elt : document.querySelector('canvas');
+  let px = Number(mouseX);
+  let py = Number(mouseY);
+  if (event && cnv && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+    const r = cnv.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      px = (event.clientX - r.left) * (width / r.width);
+      py = (event.clientY - r.top) * (height / r.height);
+    }
+  }
+  if (handleTitlePointer(px, py)) return false;
 }
 
 // スマホでは mousePressed だけに依存せず、タッチを直接処理する。
-function touchStarted() {
+function touchStarted(event) {
   if (gameMode === 'TITLE') {
-    const px = (typeof mouseX === 'number' && isFinite(mouseX)) ? mouseX : touchX;
-    const py = (typeof mouseY === 'number' && isFinite(mouseY)) ? mouseY : touchY;
+    // iPhone/Safariではp5のmouseX/mouseYがCSS表示倍率とずれることがあるため、
+    // 実際のcanvasの表示矩形から論理座標(792x810)へ変換する。
+    const cnv = (gameCanvas && gameCanvas.elt) ? gameCanvas.elt : document.querySelector('canvas');
+    let px = NaN;
+    let py = NaN;
+
+    if (event && event.touches && event.touches.length > 0 && cnv) {
+      const r = cnv.getBoundingClientRect();
+      const t = event.touches[0];
+      if (r.width > 0 && r.height > 0) {
+        px = (t.clientX - r.left) * (width / r.width);
+        py = (t.clientY - r.top) * (height / r.height);
+      }
+    }
+
+    // p5が既に論理座標へ変換している場合のフォールバック。
+    if (!Number.isFinite(px) || !Number.isFinite(py)) {
+      px = Number(touchX);
+      py = Number(touchY);
+    }
+    if (!Number.isFinite(px) || !Number.isFinite(py)) {
+      px = Number(mouseX);
+      py = Number(mouseY);
+    }
+
     handleTitlePointer(px, py);
     return false;
   }
