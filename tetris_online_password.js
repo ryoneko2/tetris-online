@@ -1953,18 +1953,16 @@ function handleOnlineHostP2Input() {
   const now = millis();
   const s = onlineGuestKeyState;
 
+  // A/Dを押した瞬間の1マス移動はkeyPressed側で行う。
+  // ここではDAS待ち後の連続移動だけを担当し、初回の二重移動を防ぐ。
   if (s.left) {
-    if (dasStartTimeLeftP2 === 0) {
-      moveLeft(2); dasStartTimeLeftP2 = now; arrTimeLeftP2 = now;
-    } else if (now - dasStartTimeLeftP2 > dasDelay && now - arrTimeLeftP2 > arrDelay) {
+    if (dasStartTimeLeftP2 !== 0 && now - dasStartTimeLeftP2 >= dasDelay && now - arrTimeLeftP2 >= arrDelay) {
       moveLeft(2); arrTimeLeftP2 = now;
     }
   } else dasStartTimeLeftP2 = 0;
 
   if (s.right) {
-    if (dasStartTimeRightP2 === 0) {
-      moveRight(2); dasStartTimeRightP2 = now; arrTimeRightP2 = now;
-    } else if (now - dasStartTimeRightP2 > dasDelay && now - arrTimeRightP2 > arrDelay) {
+    if (dasStartTimeRightP2 !== 0 && now - dasStartTimeRightP2 >= dasDelay && now - arrTimeRightP2 >= arrDelay) {
       moveRight(2); arrTimeRightP2 = now;
     }
   } else dasStartTimeRightP2 = 0;
@@ -2210,9 +2208,28 @@ function keyPressed() {
       return false;
     }
     // 元の操作系を維持：A=左 / D=右 / S=下 / W=ハードドロップ、矢印=回転
-    if (key === 'a' || key === 'A') { onlineGuestKeyState.left = true; moveLeft(2); sendOnlineAction('inputState'); }
-    else if (key === 'd' || key === 'D') { onlineGuestKeyState.right = true; moveRight(2); sendOnlineAction('inputState'); }
-    else if (key === 's' || key === 'S') { onlineGuestKeyState.down = true; moveDown(2); sendOnlineAction('inputState'); }
+    if (key === 'a' || key === 'A') {
+      const now = millis();
+      onlineGuestKeyState.left = true;
+      moveLeft(2);
+      dasStartTimeLeftP2 = now;
+      arrTimeLeftP2 = now;
+      sendOnlineAction('inputState');
+    }
+    else if (key === 'd' || key === 'D') {
+      const now = millis();
+      onlineGuestKeyState.right = true;
+      moveRight(2);
+      dasStartTimeRightP2 = now;
+      arrTimeRightP2 = now;
+      sendOnlineAction('inputState');
+    }
+    else if (key === 's' || key === 'S') {
+      onlineGuestKeyState.down = true;
+      moveDown(2);
+      lastMoveDownTimeP2 = millis();
+      sendOnlineAction('inputState');
+    }
     else if (key === 'w' || key === 'W') { hardDrop(2); sendOnlineAction('hardDrop'); }
     else if (keyCode === LEFT_ARROW) { rotateRight(2); sendOnlineAction('rotateRight'); }
     else if (keyCode === RIGHT_ARROW) { rotateLeft(2); sendOnlineAction('rotateLeft'); }
