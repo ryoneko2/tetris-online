@@ -35,6 +35,8 @@ var onlineStatus = '';
 var onlineGuestKeyState = { left:false, right:false, down:false };
 var onlineLastInputSend = 0;
 var onlineLastStateSend = 0;
+var onlinePendingState = null;
+var onlineStateApplyTimer = null;
 var onlinePrevHardDrop = false;
 var onlinePrevHold = false;
 var onlineRoundRequestSent = false;
@@ -322,7 +324,8 @@ function draw() {
     return; 
   }
 
-  // 1. UI描画は各ゲーム処理側で行う
+  // 1. UIは常に描画
+  drawUI();
 
   // 2. P1ボードを描画
   push();
@@ -1770,10 +1773,16 @@ function connectOnlineSocket(action) {
 
     if (msg.type === 'state') {
       if (onlineRole === 2 && msg.state && typeof msg.state === 'object') {
-        try {
-          applyOnlineState(msg.state);
-        } catch (e) {
-          onlineStatus = '受信データエラー';
+        // 受信のたびに即時反映せず、最新状態だけを100msごとに反映する。
+        // これで低性能なスマホ/Chromebookでも受信処理が詰まりにくくなる。
+        onlinePendingState = msg.state;
+        if (onlineStateApplyTimer === null) {
+          onlineStateApplyTimer = setTimeout(() => {
+            const latest = onlinePendingState;
+            onlinePendingState = null;
+            onlineStateApplyTimer = null;
+            if (latest && onlineRole === 2) applyOnlineState(latest);
+          }, 100);
         }
       }
       return;
@@ -1785,11 +1794,10 @@ function connectOnlineSocket(action) {
     }
 
     if (msg.type === 'remoteInputState' && onlineRole === 1) {
-      const state = (msg.state && typeof msg.state === 'object') ? msg.state : {};
       onlineGuestKeyState = {
-        left: !!state.left,
-        right: !!state.right,
-        down: !!state.down
+        left: !!(msg.state && msg.state.left),
+        right: !!(msg.state && msg.state.right),
+        down: !!(msg.state && msg.state.down)
       };
       return;
     }
@@ -1822,32 +1830,27 @@ function connectOnlineSocket(action) {
 
 function sendOnlineAction(action) {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
-  onlineSocket.send(JSON.stringify({ type:'input', action:action }));
+  try {
+    onlineSocket.send(JSON.stringify({ type:'input', action:action }));
+  } catch (e) {}
 }
 
 function handleOnlineGuestInput() {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole !== 2) return;
-
-  // 通信が詰まっている場合は新しい入力を積まない。
-  if (onlineSocket.bufferedAmount > 256 * 1024) return;
-
   const now = millis();
   if (now - onlineLastInputSend < 50) return;
   onlineLastInputSend = now;
 
   try {
     onlineSocket.send(JSON.stringify({
-      type: 'inputState',
+      type:'inputState',
       state: {
-        left: !!onlineGuestKeyState.left || keyIsDown(65),
-        right: !!onlineGuestKeyState.right || keyIsDown(68),
-        down: !!onlineGuestKeyState.down || keyIsDown(83)
+        left:!!onlineGuestKeyState.left || keyIsDown(65),
+        right:!!onlineGuestKeyState.right || keyIsDown(68),
+        down:!!onlineGuestKeyState.down || keyIsDown(83)
       }
     }));
-  } catch (e) {
-    // 通信エラーでゲームループを止めない
-    onlineStatus = '通信エラー';
-  }
+  } catch (e) {}
 }
 
 function handleOnlineHostP2Input() {
@@ -1878,7 +1881,6 @@ function handleOnlineHostP2Input() {
 }
 
 function handleOnlineRemoteAction(action) {
-  if (typeof action !== 'string') return;
   if (isRoundOver || isMatchOver) {
     if (action === 'nextRound' && !onlineRoundRequestSent) {
       onlineRoundRequestSent = true;
@@ -1944,23 +1946,13 @@ function serializeOnlineState() {
 
 function sendOnlineState(force=false) {
   if (onlineRole !== 1 || !onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
-
-  // ソケットの送信キューが膨らんだら一旦捨てる。
-  // これがホスト側の重い処理・画面停止を防ぐ重要な部分。
-  if (onlineSocket.bufferedAmount > 512 * 1024) return;
-
-  const now = millis();
-  if (!force && now - onlineLastStateSend < 100) return;
-  onlineLastStateSend = now;
-
+  if (!force && millis() - onlineLastStateSend < 150) return;
+  // 送信待ちが膨らんだら、次のフレームで無理に積まない。
+  if (onlineSocket.bufferedAmount > 256 * 1024) return;
+  onlineLastStateSend = millis();
   try {
-    onlineSocket.send(JSON.stringify({
-      type: 'state',
-      state: serializeOnlineState()
-    }));
-  } catch (e) {
-    onlineStatus = '通信エラー';
-  }
+    onlineSocket.send(JSON.stringify({ type:'state', state:serializeOnlineState() }));
+  } catch (e) {}
 }
 
 function sendOnlineStateIfNeeded() {
@@ -2018,9 +2010,10 @@ function keyPressed() {
       }
       return false;
     }
-    if (keyCode === LEFT_ARROW) sendOnlineAction('rotateRight');
-    else if (keyCode === RIGHT_ARROW || keyCode === UP_ARROW) sendOnlineAction('rotateLeft');
-    else if (keyCode === DOWN_ARROW) sendOnlineAction('rotateRight');
+    if (keyCode === LEFT_ARROW) onlineGuestKeyState.left = true;
+    else if (keyCode === RIGHT_ARROW) onlineGuestKeyState.right = true;
+    else if (keyCode === DOWN_ARROW) onlineGuestKeyState.down = true;
+    else if (keyCode === UP_ARROW) sendOnlineAction('rotateRight');
     else if (key === 'w' || key === 'W') sendOnlineAction('hardDrop');
     else if (key === 'c' || key === 'C') sendOnlineAction('hold');
     else if (key === 'p' || key === 'P') sendOnlineAction('pause');
@@ -2114,7 +2107,6 @@ function keyPressed() {
 // 左移動
 function moveLeft(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
-  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let resets = (playerIndex === 1) ? lockDelayResetCount : lockDelayResetCountP2;
@@ -2143,7 +2135,6 @@ function moveLeft(playerIndex) {
 // 右移動
 function moveRight(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
-  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let resets = (playerIndex === 1) ? lockDelayResetCount : lockDelayResetCountP2;
@@ -2181,7 +2172,6 @@ function checkIfLanded(burokku, board) {
 // 下移動
 function moveDown(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
-  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let lY = (playerIndex === 1) ? lowestY : lowestYP2;
@@ -2211,7 +2201,6 @@ function moveDown(playerIndex) {
 // 右回転
 function rotateRight(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
-  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let lY = (playerIndex === 1) ? lowestY : lowestYP2;
@@ -2257,7 +2246,6 @@ function rotateRight(playerIndex) {
 // 左回転
 function rotateLeft(playerIndex) {
   let burokku = (playerIndex === 1) ? imaNoBurokku : imaNoBurokkuP2;
-  if (!burokku) return;
   let board = (playerIndex === 1) ? gameBoard : gameBoardP2;
   let landed = (playerIndex === 1) ? isLanded : isLandedP2;
   let lY = (playerIndex === 1) ? lowestY : lowestYP2;
@@ -2800,56 +2788,52 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
 }
 
 /* ==========================================================
-   スマホ用タップ操作 + プレイモード選択 + オンライン入力
+   スマホ用タップ操作
+   ・タイトル画面: プレイモードをボタンで選択
+   ・ゲーム中: 直接ゲーム関数/オンライン操作を呼ぶ
+   ※既存のNEXT/HOLD/UI描画処理は変更しない
    ========================================================== */
 (function addMobileTetrisControls() {
-  let modeWrap = null, gameWrap = null;
+  let modeWrap = null;
+  let gameWrap = null;
 
-  function button(label, press, release) {
+  function styleButton(b, large=false) {
+    b.style.cssText =
+      'min-width:' + (large ? '120px' : '58px') + ';' +
+      'min-height:' + (large ? '50px' : '48px') + ';' +
+      'padding:7px 10px;font-size:' + (large ? '16px' : '17px') + 'px;' +
+      'font-weight:bold;border:1px solid #777;border-radius:8px;' +
+      'background:#eee;color:#111;touch-action:none;user-select:none;' +
+      '-webkit-user-select:none;box-sizing:border-box;';
+  }
+
+  function makeButton(label, onDown, onUp) {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = label;
-    b.style.cssText =
-      'min-width:56px;min-height:48px;padding:7px 10px;font-size:18px;' +
-      'font-weight:bold;border:1px solid #777;border-radius:8px;' +
-      'background:#eee;color:#111;touch-action:none;user-select:none;';
-    const down = e => { e.preventDefault(); e.stopPropagation(); press(); };
-    const up = e => { e.preventDefault(); e.stopPropagation(); if (release) release(); };
+    styleButton(b);
+
+    const down = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      onDown();
+    };
+    const up = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (onUp) onUp();
+    };
+
     b.addEventListener('pointerdown', down, {passive:false});
     b.addEventListener('pointerup', up, {passive:false});
     b.addEventListener('pointercancel', up, {passive:false});
     b.addEventListener('touchstart', down, {passive:false});
     b.addEventListener('touchend', up, {passive:false});
+    b.addEventListener('touchcancel', up, {passive:false});
     return b;
   }
 
-  function mode(mode, index) {
-    selectedButtonIndex = index;
-    if (mode === 'ONLINE') { startOnlineMenu(); return; }
-    gameMode = mode;
-    nextRound();
-  }
-
-  function makeModes() {
-    if (modeWrap) return;
-    modeWrap = document.createElement('div');
-    modeWrap.id = 'mobile-tetris-mode-controls';
-    modeWrap.style.cssText =
-      'position:fixed;left:50%;bottom:12px;transform:translateX(-50%);' +
-      'z-index:100000;width:min(96vw,560px);display:flex;flex-wrap:wrap;' +
-      'justify-content:center;gap:8px;padding:8px;box-sizing:border-box;touch-action:none;';
-    [['1P SOLO','SOLO',0],['1P vs CPU','VS_CPU',1],
-     ['1P vs 2P','VS_LOCAL',2],['ONLINE','ONLINE',3]].forEach(x => {
-      const b = button(x[0], () => mode(x[1], x[2]));
-      b.style.minWidth='120px'; b.style.minHeight='52px'; b.style.fontSize='16px';
-      modeWrap.appendChild(b);
-    });
-    document.body.appendChild(modeWrap);
-  }
-
-  function guestState(name, value) {
-    if (typeof onlineGuestKeyState === 'undefined') return;
-    onlineGuestKeyState[name] = value;
+  function sendGuestState() {
     if (typeof onlineRole !== 'undefined' && onlineRole === 2 &&
         onlineSocket && onlineSocket.readyState === WebSocket.OPEN) {
       try {
@@ -2861,70 +2845,133 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
             down:!!onlineGuestKeyState.down
           }
         }));
-      } catch (_) {}
+      } catch (e) {}
     }
   }
 
-  function action(a) {
-    if (typeof gameMode !== 'undefined' && gameMode === 'ONLINE') {
-      if (onlineRole === 2) sendOnlineAction(a);
-      else if (onlineRole === 1) handleOnlineRemoteAction(a);
+  function setGuestMove(name, value) {
+    onlineGuestKeyState[name] = value;
+    sendGuestState();
+  }
+
+  function doAction(action) {
+    if (gameMode === 'ONLINE') {
+      if (onlineRole === 2) sendOnlineAction(action);
+      else if (onlineRole === 1) handleOnlineRemoteAction(action);
       return;
     }
-    const keys = {rotateLeft:'z',rotateRight:'x',hardDrop:' ',
-                  hold:'c',pause:'p'};
-    const k = keys[a]; if (!k) return;
-    const t = document.activeElement || document.body;
-    t.dispatchEvent(new KeyboardEvent('keydown',{
-      key:k,code:k===' '?'Space':k,bubbles:true,cancelable:true
-    }));
+
+    if (action === 'rotateRight') rotateRight(1);
+    else if (action === 'rotateLeft') rotateLeft(1);
+    else if (action === 'hardDrop') hardDrop(1);
+    else if (action === 'hold') horudoSuru(1);
+    else if (action === 'pause' && countdownTime === 0) isPaused = !isPaused;
   }
 
-  function makeGame() {
-    if (gameWrap) return;
-    gameWrap = document.createElement('div');
-    gameWrap.id='mobile-tetris-controls';
-    gameWrap.style.cssText =
-      'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);' +
-      'z-index:99999;width:min(96vw,520px);display:flex;flex-wrap:wrap;' +
-      'justify-content:center;gap:6px;padding:6px;box-sizing:border-box;touch-action:none;';
+  function makeModeButtons() {
+    if (modeWrap) return;
 
-    const move = [
-      ['←','left'],['↓','down'],['→','right']
+    modeWrap = document.createElement('div');
+    modeWrap.id = 'mobile-tetris-mode-controls';
+    modeWrap.style.cssText =
+      'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);' +
+      'z-index:100000;width:min(96vw,560px);display:flex;flex-wrap:wrap;' +
+      'justify-content:center;gap:8px;padding:8px;box-sizing:border-box;' +
+      'touch-action:none;';
+
+    const modes = [
+      ['1P SOLO','SOLO'],
+      ['1P vs CPU','VS_CPU'],
+      ['1P vs 2P','VS_LOCAL'],
+      ['ONLINE','ONLINE']
     ];
-    move.forEach(([label,name]) => {
-      gameWrap.appendChild(button(label,
-        () => {
-          if (gameMode==='ONLINE' && onlineRole===2) guestState(name,true);
-          else if (gameMode==='ONLINE' && onlineRole===1)
-            ({left:moveLeft, right:moveRight, down:moveDown}[name])(1);
-          else {
-            const k={left:'ArrowLeft',right:'ArrowRight',down:'ArrowDown'}[name];
-            const t=document.activeElement||document.body;
-            t.dispatchEvent(new KeyboardEvent('keydown',{key:k,code:k,bubbles:true,cancelable:true}));
-          }
-        },
-        () => { if(gameMode==='ONLINE' && onlineRole===2) guestState(name,false); }
-      ));
+
+    modes.forEach(([label, mode], index) => {
+      const b = makeButton(label, () => {
+        selectedButtonIndex = index;
+        if (mode === 'ONLINE') {
+          startOnlineMenu();
+        } else {
+          gameMode = mode;
+          nextRound();
+        }
+      });
+      styleButton(b, true);
+      modeWrap.appendChild(b);
     });
-    [['↺','rotateLeft'],['↻','rotateRight'],['DROP','hardDrop'],
-     ['HOLD','hold'],['P','pause']].forEach(([label,a]) =>
-      gameWrap.appendChild(button(label,()=>action(a)))
-    );
+
+    document.body.appendChild(modeWrap);
+  }
+
+  function makeGameButtons() {
+    if (gameWrap) return;
+
+    gameWrap = document.createElement('div');
+    gameWrap.id = 'mobile-tetris-controls';
+    gameWrap.style.cssText =
+      'position:fixed;left:50%;bottom:8px;transform:translateX(-50%);' +
+      'z-index:99999;width:min(96vw,540px);display:flex;flex-wrap:wrap;' +
+      'justify-content:center;gap:6px;padding:6px;box-sizing:border-box;' +
+      'touch-action:none;';
+
+    const left = makeButton('←', () => {
+      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('left', true);
+      else if (gameMode === 'ONLINE') moveLeft(onlineRole === 1 ? 1 : 1);
+      else moveLeft(1);
+    }, () => {
+      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('left', false);
+    });
+
+    const down = makeButton('↓', () => {
+      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('down', true);
+      else if (gameMode === 'ONLINE') moveDown(onlineRole === 1 ? 1 : 1);
+      else moveDown(1);
+    }, () => {
+      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('down', false);
+    });
+
+    const right = makeButton('→', () => {
+      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('right', true);
+      else if (gameMode === 'ONLINE') moveRight(onlineRole === 1 ? 1 : 1);
+      else moveRight(1);
+    }, () => {
+      if (gameMode === 'ONLINE' && onlineRole === 2) setGuestMove('right', false);
+    });
+
+    gameWrap.appendChild(left);
+    gameWrap.appendChild(down);
+    gameWrap.appendChild(right);
+
+    [
+      ['↺','rotateLeft'],
+      ['↻','rotateRight'],
+      ['DROP','hardDrop'],
+      ['HOLD','hold'],
+      ['P','pause']
+    ].forEach(([label, action]) => {
+      gameWrap.appendChild(makeButton(label, () => doAction(action)));
+    });
+
     document.body.appendChild(gameWrap);
   }
 
   function update() {
-    const title = typeof gameMode!=='undefined' && gameMode==='TITLE';
-    if(modeWrap) modeWrap.style.display=title?'flex':'none';
-    if(gameWrap) gameWrap.style.display=title?'none':'flex';
+    const title = (typeof gameMode !== 'undefined' && gameMode === 'TITLE');
+    if (modeWrap) modeWrap.style.display = title ? 'flex' : 'none';
+    if (gameWrap) gameWrap.style.display = title ? 'none' : 'flex';
   }
 
   function init() {
-    if(document.getElementById('mobile-tetris-mode-controls')) return;
-    makeModes(); makeGame(); update(); setInterval(update,100);
+    if (document.getElementById('mobile-tetris-mode-controls')) return;
+    makeModeButtons();
+    makeGameButtons();
+    update();
+    setInterval(update, 200);
   }
-  if(document.readyState==='loading')
-    document.addEventListener('DOMContentLoaded',init,{once:true});
-  else init();
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, {once:true});
+  } else {
+    init();
+  }
 })();
