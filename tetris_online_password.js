@@ -33,7 +33,7 @@ var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlineMatchStartRequested = false;
 var onlineJoinedCount = 0;
-const ONLINE_BUILD_VERSION = 'HOSTSTART-20260904-10';
+const ONLINE_BUILD_VERSION = 'HOSTSTART-20260904-11';
 var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
@@ -381,9 +381,10 @@ function drawOnlineFourPlayerScreen() {
   noStroke(); fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${count} PLAYERS`,width/2,18);
   textSize(9); fill(120); text(ONLINE_BUILD_VERSION,width/2,31);
   if(onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted){
-    const bx=width/2-110, by=height-82, bw=220, bh=42;
-    stroke(255); strokeWeight(2); fill(55,110,70); rect(bx,by,bw,bh,8);
-    noStroke(); fill(255); textSize(20); text('START',width/2,by+bh/2);
+    const bx=width/2-145, by=height-92, bw=290, bh=54;
+    stroke(255); strokeWeight(3); fill(45,125,75); rect(bx,by,bw,bh,10);
+    noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(22); text('対戦を開始する（START）',width/2,by+bh/2);
+    fill(235); textSize(12); text('ホストだけが押せます',width/2,by+bh+15);
   }
   if(onlineStatus){fill(190);textSize(13);text(onlineStatus,width/2,onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted ? height-98 : height-18);}
 
@@ -1537,7 +1538,7 @@ function mousePressed(event) {
     }
     const count=Math.max(2,Math.min(4,Number(onlinePlayerCount)||2));
     if(onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted){
-      const bx=width/2-110, by=height-82, bw=220, bh=42;
+      const bx=width/2-145, by=height-92, bw=290, bh=54;
       if(px>=bx && px<=bx+bw && py>=by && py<=by+bh){ requestOnlineMatchStart(); return false; }
     }
     return false;
