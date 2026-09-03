@@ -43,6 +43,7 @@ var onlineStateApplyTimer = null;
 var onlinePrevHardDrop = false;
 var onlinePrevHold = false;
 var onlineRoundRequestSent = false;
+var onlineGuestInitialized = false;
 var titleButtons = [];
 var selectedButtonIndex = 0; 
 
@@ -356,14 +357,27 @@ function draw() {
     pop();
   }
  
-  // 4. オンラインのゲスト(P2)はホストの状態を表示するだけ。
-  // 操作はWebSocketでホストへ送る。ゲーム計算はホストだけが行う。
+  // 4. オンラインのゲスト(P2)は「自分の操作・自分の表示」を最優先。
+  // 入力は即座にローカルP2へ反映し、同じ入力をホストへ送る。
   if (gameMode === 'ONLINE' && onlineRole === 2) {
     handleOnlineGuestInput();
-    if (isMatchOver) drawMatchOverScreen();
-    else if (isRoundOver) drawRoundOverScreen();
-    else if (countdownTime > 0) drawCountdown();
-    else if (isPaused) drawPauseScreen();
+    if (isMatchOver) {
+      drawMatchOverScreen();
+    } else if (isRoundOver) {
+      drawRoundOverScreen();
+    } else if (countdownTime > 0) {
+      drawCountdown();
+    } else if (isPaused) {
+      drawPauseScreen();
+    } else if (isStarted) {
+      // P2のゲーム処理をゲスト側でも動かす。ホストからの往復を待たない。
+      handleOnlineHostP2Input();
+      if (isLandedP2 && lockDelayTimerP2 > 0 && millis() > lockDelayTimerP2) {
+        hardDrop(2);
+      } else if (!isLandedP2 && frameCount % framesPerDrop === 0 && !onlineGuestKeyState.down) {
+        moveDown(2);
+      }
+    }
     return;
   }
 
@@ -1355,6 +1369,14 @@ function touchStarted(event) {
   return false;
 }
 
+function keyReleased() {
+  if (gameMode === 'ONLINE' && onlineRole === 2) {
+    if (keyCode === LEFT_ARROW) onlineGuestKeyState.left = false;
+    else if (keyCode === RIGHT_ARROW) onlineGuestKeyState.right = false;
+    else if (keyCode === DOWN_ARROW) onlineGuestKeyState.down = false;
+  }
+}
+
 // プレイヤー/CPUに応じてバッグを管理
 function getNextBlockType(playerIndex) { // 1 or 2 (CPU)
   let bag = (playerIndex === 1) ? p1BurokkuBaggu : p2BurokkuBaggu;
@@ -1837,6 +1859,7 @@ function connectOnlineSocket(action) {
       onlineOpponentConnected = true;
       if (onlineRole === 2) {
         gameMode = 'ONLINE';
+        onlineGuestInitialized = false;
         onlineStatus = '対戦開始！';
       }
       return;
@@ -2077,6 +2100,15 @@ function applyOnlineState(s) {
 
   // 盤面・現在ブロックは最重要。どれかが壊れていたら「状態全体」を反映しない。
   if (!isValidOnlineBoard(s.gameBoard) || !isValidOnlineBoard(s.gameBoardP2)) return false;
+
+  const keepGuestP2 = (onlineRole === 2 && onlineGuestInitialized);
+  const localP2 = keepGuestP2 ? {
+    gameBoardP2, imaNoBurokkuP2, cpuScore, cpuAttackPower, cpuBackToBack, cpuComboCount,
+    cpuHoldBlock, cpuHoldUsed, player2AttackQueue, p2BurokkuBaggu, p2TsugiBurokkuBaggu,
+    isLandedP2, lockDelayTimerP2, lockDelayResetCountP2, lowestYP2, lastActionP2,
+    dasStartTimeLeftP2, dasStartTimeRightP2, arrTimeLeftP2, arrTimeRightP2, lastMoveDownTimeP2,
+    wasHardDropPressedP2
+  } : null;
   if (!isValidOnlineBlock(s.imaNoBurokku) || !isValidOnlineBlock(s.imaNoBurokkuP2)) return false;
   if (!isValidOnlineArray(s.playerAttackQueue, 40) || !isValidOnlineArray(s.player2AttackQueue, 40)) return false;
   if (!isValidOnlineArray(s.p1BurokkuBaggu, 20) || !isValidOnlineArray(s.p1TsugiBurokkuBaggu, 20) ||
@@ -2119,25 +2151,55 @@ function applyOnlineState(s) {
 
   const remain = Math.max(0, Math.min(countdownDuration, Number(s.countdownRemaining) || 0));
   countdownTime = remain > 0 ? millis() - (countdownDuration - remain) : 0;
+
+  if (localP2) {
+    gameBoardP2 = localP2.gameBoardP2;
+    imaNoBurokkuP2 = localP2.imaNoBurokkuP2;
+    cpuScore = localP2.cpuScore;
+    cpuAttackPower = localP2.cpuAttackPower;
+    cpuBackToBack = localP2.cpuBackToBack;
+    cpuComboCount = localP2.cpuComboCount;
+    cpuHoldBlock = localP2.cpuHoldBlock;
+    cpuHoldUsed = localP2.cpuHoldUsed;
+    p2BurokkuBaggu = localP2.p2BurokkuBaggu;
+    p2TsugiBurokkuBaggu = localP2.p2TsugiBurokkuBaggu;
+    isLandedP2 = localP2.isLandedP2;
+    lockDelayTimerP2 = localP2.lockDelayTimerP2;
+    lockDelayResetCountP2 = localP2.lockDelayResetCountP2;
+    lowestYP2 = localP2.lowestYP2;
+    lastActionP2 = localP2.lastActionP2;
+    dasStartTimeLeftP2 = localP2.dasStartTimeLeftP2;
+    dasStartTimeRightP2 = localP2.dasStartTimeRightP2;
+    arrTimeLeftP2 = localP2.arrTimeLeftP2;
+    arrTimeRightP2 = localP2.arrTimeRightP2;
+    lastMoveDownTimeP2 = localP2.lastMoveDownTimeP2;
+    wasHardDropPressedP2 = localP2.wasHardDropPressedP2;
+    const hostQ = Array.isArray(s.player2AttackQueue) ? s.player2AttackQueue : [];
+    const hostTotal = hostQ.reduce((a,v)=>a + (Number(v)||0), 0);
+    const localTotal = player2AttackQueue.reduce((a,v)=>a + (Number(v)||0), 0);
+    player2AttackQueue = hostTotal > localTotal ? cloneOnlineValue(hostQ) : localP2.player2AttackQueue;
+  } else {
+    onlineGuestInitialized = true;
+  }
+
   if (seq) onlineLastAppliedSeq = seq;
   return true;
 }
 
 // keyPressed を gameMode で分岐
 function keyPressed() {
-  // オンラインのゲストは自分でゲーム状態を変更せず、操作だけホストへ送る。
+  // オンラインのゲストは入力をローカルP2へ即時反映し、同じ操作をホストへ送る。
   if (gameMode === 'ONLINE' && onlineRole === 2) {
     if (isRoundOver || isMatchOver) {
-      if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW || key === 'w' || key === 'W') {
-        sendOnlineAction('nextRound');
-      }
+      if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW || key === 'w' || key === 'W' || key === 'a' || key === 'A') sendOnlineAction('nextRound');
       return false;
     }
-    if (keyCode === LEFT_ARROW) sendOnlineAction('rotateRight');
-    else if (keyCode === RIGHT_ARROW || keyCode === UP_ARROW) sendOnlineAction('rotateLeft');
-    else if (keyCode === DOWN_ARROW) sendOnlineAction('rotateRight');
-    else if (key === 'w' || key === 'W') sendOnlineAction('hardDrop');
-    else if (key === 'c' || key === 'C') sendOnlineAction('hold');
+    if (keyCode === LEFT_ARROW) { onlineGuestKeyState.left = true; moveLeft(2); }
+    else if (keyCode === RIGHT_ARROW) { onlineGuestKeyState.right = true; moveRight(2); }
+    else if (keyCode === DOWN_ARROW) { onlineGuestKeyState.down = true; moveDown(2); }
+    else if (keyCode === UP_ARROW) { rotateRight(2); sendOnlineAction('rotateRight'); }
+    else if (key === 'w' || key === 'W') { hardDrop(2); sendOnlineAction('hardDrop'); }
+    else if (key === 'c' || key === 'C') { horudoSuru(2); sendOnlineAction('hold'); }
     else if (key === 'p' || key === 'P') sendOnlineAction('pause');
     return false;
   }
@@ -2936,9 +2998,9 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
     panel.appendChild(makeButton('←','left',()=>setKey('left',true),()=>setKey('left',false)));
     panel.appendChild(makeButton('↓','down',()=>setKey('down',true),()=>setKey('down',false)));
     panel.appendChild(makeButton('→','right',()=>setKey('right',true),()=>setKey('right',false)));
-    panel.appendChild(makeButton('↻','rotate',()=>sendOnlineAction('rotateRight')));
-    panel.appendChild(makeButton('DROP','drop',()=>sendOnlineAction('hardDrop')));
-    panel.appendChild(makeButton('HOLD','hold',()=>sendOnlineAction('hold')));
+    panel.appendChild(makeButton('↻','rotate',()=>{ rotateRight(2); sendOnlineAction('rotateRight'); }));
+    panel.appendChild(makeButton('DROP','drop',()=>{ hardDrop(2); sendOnlineAction('hardDrop'); }));
+    panel.appendChild(makeButton('HOLD','hold',()=>{ horudoSuru(2); sendOnlineAction('hold'); }));
     // タイトル画面ではパネルを非表示にして、スマホのモード選択を邪魔しない。
     panel.style.display = 'none';
     document.body.appendChild(panel);
