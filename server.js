@@ -35,7 +35,7 @@ const server=http.createServer((req,res)=>{
   const rel=urlPath==='/'?'index.html':urlPath.replace(/^\/+/, '');
   const filePath=path.resolve(ROOT,rel);
   if(!filePath.startsWith(ROOT+path.sep)){res.writeHead(403);return res.end('Forbidden');}
-  fs.readFile(filePath,(err,data)=>{ if(err){res.writeHead(404,{'Content-Type':'text/plain; charset=utf-8'});return res.end('Not Found');} const ext=path.extname(filePath).toLowerCase(); res.writeHead(200,{'Content-Type':MIME[ext]||'application/octet-stream'}); res.end(data); });
+  fs.readFile(filePath,(err,data)=>{ if(err){res.writeHead(404,{'Content-Type':'text/plain; charset=utf-8'});return res.end('Not Found');} const ext=path.extname(filePath).toLowerCase(); res.writeHead(200,{'Content-Type':MIME[ext]||'application/octet-stream','Cache-Control':'no-store, no-cache, must-revalidate, proxy-revalidate','Pragma':'no-cache','Expires':'0'}); res.end(data); });
 });
 const wss=new WebSocket.Server({server});
 
