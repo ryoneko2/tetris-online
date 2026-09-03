@@ -337,250 +337,30 @@ function setup() {
 // ▼▼▼ 修正点 3 (テトリス25): draw() の translate() を修正 ▼▼▼
 function drawOnlineFourPlayerScreen() {
   background(18,18,30);
-  const count = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
-  textAlign(CENTER, CENTER);
-
-  // 2人対戦は従来の左右配置を維持。
-  if (count === 2) {
-    const cell = 22;
-    const bw = RETSU * cell, bh = GYO * cell;
-    const gap = 12;
-    const totalW = bw * 2 + gap;
-    const startX = (width - totalW) / 2;
-    for (let i = 0; i < 2; i++) {
-      const role = i + 1;
-      const x = startX + i * (bw + gap);
-      const y = 52;
-      const local = role === onlineRole;
-      const st = local ? null : onlineRemoteStates[role];
-      const board = local ? gameBoard : (st && st.board ? st.board : Array.from({length:GYO},()=>new Array(RETSU).fill(0)));
-      const block = local ? imaNoBurokku : (st && st.block ? st.block : null);
-      push();
-      translate(x,y);
-      fill(10,10,20,220); noStroke(); rect(0,0,bw,bh);
-      stroke(80); noFill(); rect(0,0,bw,bh);
-      for(let gx=0;gx<=RETSU;gx++) line(gx*cell,0,gx*cell,bh);
-      for(let gy=0;gy<=GYO;gy++) line(0,gy*cell,bw,gy*cell);
-      drawOnlineScaledBoard(board,cell);
-      if(block) drawOnlineScaledBlock(block,cell);
-      pop();
-      noStroke(); fill(local?255:210); textSize(16); text(`PLAYER ${role}${local?'  YOU':''}`, x+bw/2, y-20);
-      const score = local ? sukoa : (st ? Number(st.score)||0 : 0);
-      fill(220); textSize(15); text(`ONLINE  SCORE ${score}`, x+bw/2, y+bh+20);
-    }
-  } else {
-    // 3/4人対戦：自分を左に大きく、相手を右に縦並びで表示。
-    const selfCell = 22;
-    const selfW = RETSU * selfCell, selfH = GYO * selfCell;
-    const smallCell = 13;
-    const oppW = RETSU * smallCell, oppH = GYO * smallCell;
-    const gap = 24;
-    const totalW = selfW + gap + oppW;
-    const startX = (width - totalW) / 2;
-    const selfY = 70;
-
-    push();
-    translate(startX, selfY);
-    fill(10,10,20,220); noStroke(); rect(0,0,selfW,selfH);
-    stroke(80); noFill(); rect(0,0,selfW,selfH);
-    for(let gx=0;gx<=RETSU;gx++) line(gx*selfCell,0,gx*selfCell,selfH);
-    for(let gy=0;gy<=GYO;gy++) line(0,gy*selfCell,selfW,gy*selfCell);
-    drawOnlineScaledBoard(gameBoard,selfCell);
-    if(imaNoBurokku) drawOnlineScaledBlock(imaNoBurokku,selfCell);
-    pop();
-    noStroke(); fill(255); textSize(18); text(`PLAYER ${onlineRole}  YOU`, startX+selfW/2, selfY-28);
-    fill(220); textSize(15); text(`ONLINE  SCORE ${sukoa}`, startX+selfW/2, selfY+selfH+22);
-
-    const opponents = [];
-    for(let role=1; role<=count; role++) if(role !== onlineRole) opponents.push(role);
-    const oppStartX = startX + selfW + gap;
-    const availableH = selfH;
-    const oppGap = 22;
-    const oppStep = oppH + oppGap;
-    const oppTop = selfY + Math.max(0, (availableH - opponents.length*oppH - (opponents.length-1)*oppGap)/2);
-    for(let i=0;i<opponents.length;i++) {
-      const role = opponents[i];
-      const x = oppStartX, y = oppTop + i*oppStep;
-      const st = onlineRemoteStates[role];
-      const board = st && st.board ? st.board : Array.from({length:GYO},()=>new Array(RETSU).fill(0));
-      const block = st && st.block ? st.block : null;
-      push();
-      translate(x,y);
-      fill(10,10,20,220); noStroke(); rect(0,0,oppW,oppH);
-      stroke(80); noFill(); rect(0,0,oppW,oppH);
-      for(let gx=0;gx<=RETSU;gx++) line(gx*smallCell,0,gx*smallCell,oppH);
-      for(let gy=0;gy<=GYO;gy++) line(0,gy*smallCell,oppW,gy*smallCell);
-      drawOnlineScaledBoard(board,smallCell);
-      if(block) drawOnlineScaledBlock(block,smallCell);
-      pop();
-      noStroke(); fill(210); textSize(14); text(`PLAYER ${role}`, x+oppW/2, y-16);
-      const score = st ? Number(st.score)||0 : 0;
-      textSize(12); fill(200); text(`SCORE ${score}`, x+oppW/2, y+oppH+15);
-    }
+  const count=Math.max(2,Math.min(4,Number(onlinePlayerCount)||2));
+  textAlign(CENTER,CENTER);
+  const selfCell=22,selfW=RETSU*selfCell,selfH=GYO*selfCell,hudW=92,gap=16;
+  const smallCell=count===2?22:13,oppW=RETSU*smallCell,oppH=GYO*smallCell;
+  if(count===2){
+    const totalW=hudW+selfW+gap+selfW,startX=Math.max(8,(width-totalW)/2),y=62;
+    drawOnlineSelfHud(startX,y,hudW);drawOnlineBoardAt(startX+hudW,y,selfCell,gameBoard,imaNoBurokku);
+    const role=onlineRole===1?2:1,x=startX+hudW+selfW+gap,st=onlineRemoteStates[role];
+    drawOnlineRemoteBoardAt(x,y,smallCell,st);drawOnlineOpponentStats(x,y,selfW,selfH,st,role);
+  }else{
+    const totalW=hudW+selfW+gap+oppW,startX=Math.max(8,(width-totalW)/2),selfX=startX+hudW,selfY=70;
+    drawOnlineSelfHud(startX,selfY,hudW);drawOnlineBoardAt(selfX,selfY,selfCell,gameBoard,imaNoBurokku);
+    const opponents=[];for(let role=1;role<=count;role++)if(role!==onlineRole)opponents.push(role);
+    const oppX=selfX+selfW+gap,oppGap=18,totalOppH=opponents.length*oppH+(opponents.length-1)*oppGap,top=selfY+Math.max(0,(selfH-totalOppH)/2);
+    opponents.forEach((role,i)=>{const y=top+i*(oppH+oppGap),st=onlineRemoteStates[role];drawOnlineRemoteBoardAt(oppX,y,smallCell,st);noStroke();fill(220);textSize(14);text(`PLAYER ${role}`,oppX+oppW/2,y-16);textSize(12);text(`SCORE ${st?Number(st.score)||0:0}`,oppX+oppW/2,y+oppH+14);});
   }
-
-  fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${count} PLAYERS`, width/2, 18);
-  if (onlineStatus) { textSize(13); fill(190); text(onlineStatus,width/2,height-18); }
-  if (isRoundOver) {
-    fill(0,0,0,175); rect(0,0,width,height);
-    fill(255); textSize(28);
-    if (isMatchOver && onlineMatchWinnerRole) text(`PLAYER ${onlineMatchWinnerRole} WINS MATCH!`,width/2,height/2-20);
-    else if (onlineRoundWinnerRole) text(`PLAYER ${onlineRoundWinnerRole} WINS ROUND!`,width/2,height/2-20);
-    textSize(17); text('Rotate / A / C で次へ',width/2,height/2+25);
-  }
+  noStroke();fill(255);textSize(15);text(`ROOM ${onlineRoom}   ${count} PLAYERS`,width/2,18);if(onlineStatus){textSize(13);fill(190);text(onlineStatus,width/2,height-18);}
+  if(isRoundOver){fill(0,0,0,175);rect(0,0,width,height);fill(255);textSize(28);if(isMatchOver&&onlineMatchWinnerRole)text(`PLAYER ${onlineMatchWinnerRole} WINS MATCH!`,width/2,height/2-20);else if(onlineRoundWinnerRole)text(`PLAYER ${onlineRoundWinnerRole} WINS ROUND!`,width/2,height/2-20);textSize(17);text('Rotate / A / C で次へ',width/2,height/2+25);}
 }
+function drawOnlineBoardAt(x,y,cell,board,block){const bw=RETSU*cell,bh=GYO*cell;push();translate(x,y);fill(10,10,20,220);noStroke();rect(0,0,bw,bh);stroke(80);noFill();rect(0,0,bw,bh);for(let gx=0;gx<=RETSU;gx++)line(gx*cell,0,gx*cell,bh);for(let gy=0;gy<=GYO;gy++)line(0,gy*cell,bw,gy*cell);drawOnlineScaledBoard(board,cell);if(block)drawOnlineScaledBlock(block,cell);pop();}
+function drawOnlineRemoteBoardAt(x,y,cell,st){const board=st&&st.board?st.board:Array.from({length:GYO},()=>new Array(RETSU).fill(0));drawOnlineBoardAt(x,y,cell,board,st&&st.block?st.block:null);}
+function drawOnlineOpponentStats(x,y,w,h,st,role){noStroke();fill(210);textSize(14);text(`PLAYER ${role}`,x+w/2,y-16);textSize(12);text(`SCORE ${st?Number(st.score)||0:0}`,x+w/2,y+h+14);}
+function drawOnlineSelfHud(x,y,w){noStroke();fill(10,10,20,235);rect(x,42,w,height-50);fill(255);textSize(13);text('HOLD',x+w/2,58);stroke(100);noFill();rect(x+15,70,w-30,52,4);drawMiniBurokku(horudoBurokku,x+w/2,96);fill(255);textSize(13);text('NEXT',x+w/2,142);for(let i=0;i<4;i++){let t=null,idx=p1BurokkuBaggu.length-1-i;if(idx>=0)t=p1BurokkuBaggu[idx];else{let ni=p1TsugiBurokkuBaggu.length-1-(i-p1BurokkuBaggu.length);if(ni>=0)t=p1TsugiBurokkuBaggu[ni];}const yy=168+i*55;stroke(70);noFill();rect(x+18,yy,w-36,46,4);drawMiniBurokku(t,x+w/2,yy+23);}const gaugeTop=405,gaugeH=Math.max(90,height-gaugeTop-38),gaugeW=22,gaugeX=x+(w-gaugeW)/2;noStroke();fill(255);textSize(12);text('ATTACK',x+w/2,gaugeTop-12);fill(45,45,60);rect(gaugeX,gaugeTop,gaugeW,gaugeH);const total=playerAttackQueue.reduce((a,v)=>a+(Number(v)||0),0),barH=Math.min(gaugeH,map(total,0,12,0,gaugeH));fill(255,70,70);rect(gaugeX,gaugeTop+gaugeH-barH,gaugeW,barH);fill(255);textSize(11);text(`AP ${attackPower}`,x+w/2,gaugeTop+gaugeH+14);text(`G ${total}`,x+w/2,gaugeTop+gaugeH+28);}
 
-function drawOnlineScaledBoard(board,cell) {
-  if(!Array.isArray(board)) return;
-  for(let y=0;y<GYO;y++) for(let x=0;x<RETSU;x++) if(board[y] && board[y][x]) {
-    fill(burokkuIro[board[y][x]-1] || 120); noStroke(); rect(x*cell,y*cell,cell-1,cell-1);
-  }
-}
-function drawOnlineScaledBlock(block,cell) {
-  if(!block || !Array.isArray(block.shape)) return;
-  const type=Number(block.type)||0;
-  const c=burokkuIro[type]; fill(c || 180); noStroke();
-  for(let y=0;y<block.shape.length;y++) for(let x=0;x<block.shape[y].length;x++) if(block.shape[y][x]) {
-    const bx=(Number(block.x)+x)*cell, by=(Number(block.y)+y)*cell;
-    if(by+cell>0) rect(bx,by,cell-1,cell-1);
-  }
-}
-
-function draw() {
-  background(30, 30, 50);
-  if (gameMode === 'TITLE') { drawTitleScreen(); handlePlayerInput(); return; }
-
-  if (gameMode === 'ONLINE') {
-    // オンラインでは全プレイヤーが「自分のP1エンジン」を使う。
-    // これによりPLAYER 3/4でもA/D/S/W・矢印・Cを完全に同じ操作で使える。
-    drawOnlineFourPlayerScreen();
-    if (!isMatchOver && !isRoundOver && countdownTime === 0 && !isPaused && isStarted) {
-      handlePlayerInput();
-      if (isLanded && lockDelayTimer > 0 && millis() > lockDelayTimer) hardDrop(1);
-      else if (!isLanded && frameCount % framesPerDrop === 0) moveDown(1);
-    }
-    sendLocalOnlineState(false);
-    return;
-  }
-
-  // 1. UIは常に描画
-  drawUI();
-
-  // 2. P1ボードを描画
-  push();
-  translate(P1_BOARD_X_OFFSET, 0); // P1ボード (x=88)
-  drawGrid();
-  drawGameBoard(gameBoard, 0);
-  drawImaNoBurokku(imaNoBurokku, 0);
-  pop();
-
-  // 3. P2/CPUボードを描画 (SOLOモード以外)
-  if (gameMode === 'VS_CPU' || gameMode === 'VS_LOCAL' || gameMode === 'ONLINE') {
-    push();
-    translate(P2_BOARD_X_OFFSET, 0); // P2ボード (x=484)
-    drawGrid();
-    drawGameBoard(gameBoardP2, 0);
-    drawImaNoBurokku(imaNoBurokkuP2, 0);
-    pop();
-  }
- 
-  // 4. オンラインのゲスト(P2)は「自分の操作・自分の表示」を最優先。
-  // 入力は即座にローカルP2へ反映し、同じ入力をホストへ送る。
-  if (gameMode === 'ONLINE' && onlineRole >= 2) {
-    handleOnlineGuestInput();
-    if (isMatchOver) {
-      drawMatchOverScreen();
-    } else if (isRoundOver) {
-      drawRoundOverScreen();
-    } else if (countdownTime > 0) {
-      drawCountdown();
-    } else if (isPaused) {
-      drawPauseScreen();
-    } else if (isStarted) {
-      // P2のゲーム処理をゲスト側でも動かす。ホストからの往復を待たない。
-      handleOnlineHostP2Input();
-      if (isLandedP2 && lockDelayTimerP2 > 0 && millis() > lockDelayTimerP2) {
-        hardDrop(2);
-      } else if (!isLandedP2 && frameCount % framesPerDrop === 0 && !onlineGuestKeyState.down) {
-        moveDown(2);
-      }
-    }
-    return;
-  }
-
-  // 4. 状態ごとの処理
-  if (isMatchOver) {
-    drawMatchOverScreen(); 
-    handlePlayerInput(); 
-    if (gameMode === 'VS_LOCAL') handlePlayer2Input(); 
-  }
-  else if (isRoundOver) {
-    drawRoundOverScreen(); 
-    handlePlayerInput(); 
-    if (gameMode === 'VS_LOCAL') handlePlayer2Input(); 
-  }
-  else if (!isStarted) {
-    // (nextRound で isStarted = true になる)
-  } 
-  else if (countdownTime > 0) {
-    drawCountdown();
-    handlePlayerInput();
-    if (gameMode === 'VS_LOCAL') handlePlayer2Input();
-  } 
-  else if (isPaused) {
-    drawPauseScreen();
-    handlePlayerInput();
-    if (gameMode === 'VS_LOCAL') handlePlayer2Input();
-  } 
-  else {
-    // --- 通常のゲームロジック ---
-    handlePlayerInput(); // P1 入力
-    
-    // P1: ロックディレイ
-    if (isLanded && lockDelayTimer > 0 && millis() > lockDelayTimer) {
-      hardDrop(1); 
-    }
-    // P1: 自然落下
-    else if (!isLanded && frameCount % framesPerDrop === 0) {
-        let isSoftDropping = false;
-        const gp = navigator.getGamepads()[0];
-        if (gp) {
-             isSoftDropping = isSoftDropping || (gp.axes[1] > 0.5 || gp.buttons[13].pressed);
-        }
-        if (!isSoftDropping) {
-             moveDown(1);
-        }
-    }
-
-    // --- P2 または CPU のロジック ---
-    if (gameMode === 'VS_CPU') {
-      if (frameCount % 5 === 0) { 
-          cpuTurn();
-      }
-    } else if (gameMode === 'VS_LOCAL' || gameMode === 'ONLINE') {
-      if (gameMode === 'VS_LOCAL') {
-        handlePlayer2Input(); // P2 入力
-      } else {
-        handleOnlineHostP2Input(); // オンラインP2はゲスト入力をホストで実行
-      }
-      
-      // P2: ロックディレイ
-      if (isLandedP2 && lockDelayTimerP2 > 0 && millis() > lockDelayTimerP2) {
-        hardDrop(2); 
-      }
-      // P2: 自然落下
-      else if (!isLandedP2 && frameCount % framesPerDrop === 0) {
-          if (gameMode === 'ONLINE' ? !onlineGuestKeyState.down : !keyIsDown(83)) {
-               moveDown(2);
-          }
-      }
-    }
-  }
-
-  if (gameMode === 'ONLINE' && onlineRole === 1) {
-    sendOnlineStateIfNeeded();
-  }
-}
 // ▲▲▲
 
 // ボード背景とグリッド線
@@ -1244,8 +1024,8 @@ function handlePlayerInput() {
         let now = millis();
        
         // --- 左右移動 (キーボード WASD OR コントローラー) ---
-        let isLeftPressed = (axisX < -0.5 || dpadLeft || keyIsDown(65)); // A
-        let isRightPressed = (axisX > 0.5 || dpadRight || keyIsDown(68)); // D
+        let isLeftPressed = (axisX < -0.5 || dpadLeft || !!onlineGuestKeyState.left || keyIsDown(65)); // A
+        let isRightPressed = (axisX > 0.5 || dpadRight || !!onlineGuestKeyState.right || keyIsDown(68)); // D
 
         if (isLeftPressed) {
             if (dasStartTimeLeft === 0) {
@@ -1278,7 +1058,7 @@ function handlePlayerInput() {
         }
        
         // --- 下移動 (キーボード S OR コントローラー) ---
-        if (axisY > 0.5 || dpadDown || keyIsDown(83)) { // S
+        if (axisY > 0.5 || dpadDown || !!onlineGuestKeyState.down || keyIsDown(83)) { // S
             if (now - lastMoveDownTime > moveDownDelay) {
                 moveDown(1); 
                 lastMoveDownTime = now;
@@ -1973,8 +1753,15 @@ function startOnlineMenu() {
       return;
     }
 
+    let count = prompt('この部屋は何人対戦ですか？\n\nホストに確認して 2 / 3 / 4 のいずれかを入力してください。', '3');
+    if (count === null) return;
+    count = Number(count.trim());
+    if (![2,3,4].includes(count)) {
+      alert('人数は2、3、4のいずれかです。');
+      return;
+    }
     onlineRole = 0;
-    onlinePlayerCount = 2;
+    onlinePlayerCount = count;
     onlineRoom = password;
     onlineStatus = '部屋に参加中...';
     connectOnlineSocket('join');
@@ -2442,34 +2229,8 @@ function applyOnlineState(s) {
 
 // keyPressed を gameMode で分岐
 function keyPressed() {
-  // オンラインはROLE 1〜4の全員が自分のP1エンジンを操作する。
-  if (gameMode === 'ONLINE' && onlineRole >= 1) {
-    if (isRoundOver || isMatchOver) {
-      if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW || key === 'w' || key === 'W' || key === 'a' || key === 'A' || key === 'c' || key === 'C') sendOnlineAction('nextRound');
-      return false;
-    }
-    if (key === 'a' || key === 'A') {
-      const now = millis();
-      moveLeft(1); dasStartTimeLeft = now; arrTimeLeft = now;
-    }
-    else if (key === 'd' || key === 'D') {
-      const now = millis();
-      moveRight(1); dasStartTimeRight = now; arrTimeRight = now;
-    }
-    else if (key === 's' || key === 'S') {
-      moveDown(1); lastMoveDownTime = millis();
-    }
-    else if (key === 'w' || key === 'W') hardDrop(1);
-    else if (keyCode === LEFT_ARROW) rotateRight(1);
-    else if (keyCode === RIGHT_ARROW) rotateLeft(1);
-    else if (keyCode === UP_ARROW) rotateLeft(1);
-    else if (keyCode === DOWN_ARROW) rotateRight(1);
-    else if (key === 'c' || key === 'C') horudoSuru(1);
-    else if (key === 'p' || key === 'P') {
-      if (countdownTime === 0) isPaused = !isPaused;
-    }
-    return false;
-  }
+  // オンラインのキーボード操作は専用DOMハンドラで処理し、二重入力を防ぐ。
+  if (gameMode === 'ONLINE' && onlineRole >= 1) return false;
 
   if (isMatchOver) {
     if (key === 'a' || key === 'A' || key === 'x' || key === 'X' || key === 'z' || key === 'Z' || key === 'c' || key === 'C') { 
@@ -3233,6 +2994,14 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
 }
 
 // ============================================================
+// オンライン用キーボード入力（ChromeOS/ブラウザ差を吸収）
+(function setupOnlineKeyboardControls(){
+  const active=()=>typeof gameMode!=='undefined'&&gameMode==='ONLINE'&&typeof onlineRole!=='undefined'&&onlineRole>=1;
+  window.addEventListener('keydown',e=>{if(!active())return;const c=e.code;if(c==='KeyA'||c==='KeyD'||c==='KeyS'){e.preventDefault();if(c==='KeyA')onlineGuestKeyState.left=true;if(c==='KeyD')onlineGuestKeyState.right=true;if(c==='KeyS')onlineGuestKeyState.down=true;return;}if(e.repeat)return;if(isRoundOver||isMatchOver){if(['KeyA','KeyC','KeyW','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(c))sendOnlineAction('nextRound');return;}if(countdownTime>0||isPaused||!isStarted)return;if(c==='KeyW'){e.preventDefault();hardDrop(1);sendOnlineAction('hardDrop');}else if(c==='ArrowLeft'){e.preventDefault();rotateRight(1);sendOnlineAction('rotateRight');}else if(c==='ArrowRight'||c==='ArrowUp'){e.preventDefault();rotateLeft(1);sendOnlineAction('rotateLeft');}else if(c==='ArrowDown'){e.preventDefault();rotateRight(1);sendOnlineAction('rotateRight');}else if(c==='KeyC'){e.preventDefault();horudoSuru(1);sendOnlineAction('hold');}else if(c==='KeyP'){e.preventDefault();isPaused=!isPaused;}},{passive:false});
+  window.addEventListener('keyup',e=>{if(e.code==='KeyA')onlineGuestKeyState.left=false;if(e.code==='KeyD')onlineGuestKeyState.right=false;if(e.code==='KeyS')onlineGuestKeyState.down=false;});
+  window.addEventListener('blur',()=>{onlineGuestKeyState.left=false;onlineGuestKeyState.right=false;onlineGuestKeyState.down=false;});
+})();
+
 // スマホ用オンライン操作パネル
 // キーボードイベントを偽装せず、オンライン入力変数/アクションを直接送る。
 // ============================================================
@@ -3259,16 +3028,16 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
     panel.appendChild(makeButton('←','left',()=>setKey('left',true),()=>setKey('left',false)));
     panel.appendChild(makeButton('↓','down',()=>setKey('down',true),()=>setKey('down',false)));
     panel.appendChild(makeButton('→','right',()=>setKey('right',true),()=>setKey('right',false)));
-    panel.appendChild(makeButton('↻','rotate',()=>{ rotateRight(2); sendOnlineAction('rotateRight'); }));
-    panel.appendChild(makeButton('DROP','drop',()=>{ hardDrop(2); sendOnlineAction('hardDrop'); }));
-    panel.appendChild(makeButton('HOLD','hold',()=>{ horudoSuru(2); sendOnlineAction('hold'); }));
+    panel.appendChild(makeButton('↻','rotate',()=>{ rotateRight(1); sendOnlineAction('rotateRight'); }));
+    panel.appendChild(makeButton('DROP','drop',()=>{ hardDrop(1); sendOnlineAction('hardDrop'); }));
+    panel.appendChild(makeButton('HOLD','hold',()=>{ horudoSuru(1); sendOnlineAction('hold'); }));
     // タイトル画面ではパネルを非表示にして、スマホのモード選択を邪魔しない。
     panel.style.display = 'none';
     document.body.appendChild(panel);
 
     // オンラインのゲストになった時だけ操作パネルを表示する。
     const updateVisibility = () => {
-      const isOnlineGuest = (typeof gameMode !== 'undefined' && gameMode === 'ONLINE' && typeof onlineRole !== 'undefined' && onlineRole >= 2);
+      const isOnlineGuest = (typeof gameMode !== 'undefined' && gameMode === 'ONLINE' && typeof onlineRole !== 'undefined' && onlineRole >= 1);
       panel.style.display = isOnlineGuest ? 'flex' : 'none';
       // 非表示中はタッチを完全に下のキャンバスへ通す。
       panel.style.pointerEvents = isOnlineGuest ? 'auto' : 'none';
