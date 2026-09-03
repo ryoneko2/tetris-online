@@ -77,14 +77,14 @@ var burokkuIro; // ブロックの色
 // --- ▼ 速度/アクション関連の調整 ▼ ---
 var framesPerDrop = 30; // 通常の落下速度 (1マス/30フレーム)
 var lastAction = 'NONE'; // P1 最後に成功したアクション
-var dasDelay = 120; // 左右のタメ時間 (ミリ秒)
-var arrDelay = 30;  // 左右のリピート速度 (ミリ秒)
+var dasDelay = 150; // ぷよテト2寄り：左右のタメ時間 (ミリ秒)
+var arrDelay = 35;  // ぷよテト2寄り：左右のリピート速度 (ミリ秒)
 var dasStartTimeLeft = 0;
 var dasStartTimeRight = 0;
 var arrTimeLeft = 0;
 var arrTimeRight = 0;
 var lastMoveDownTime = 0;
-var moveDownDelay = 25; // 下入力の遅延 (ミリ秒)
+var moveDownDelay = 40; // ぷよテト2寄り：下入力の間隔 (ミリ秒)
 
 // --- ▼ P2 (VS_LOCAL) 用の入力変数 ▼ ---
 var lastActionP2 = 'NONE';
