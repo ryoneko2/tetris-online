@@ -2885,7 +2885,19 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
     panel.appendChild(makeButton('↻','rotate',()=>sendOnlineAction('rotateRight')));
     panel.appendChild(makeButton('DROP','drop',()=>sendOnlineAction('hardDrop')));
     panel.appendChild(makeButton('HOLD','hold',()=>sendOnlineAction('hold')));
+    // タイトル画面ではパネルを非表示にして、スマホのモード選択を邪魔しない。
+    panel.style.display = 'none';
     document.body.appendChild(panel);
+
+    // オンラインのゲストになった時だけ操作パネルを表示する。
+    const updateVisibility = () => {
+      const isOnlineGuest = (typeof gameMode !== 'undefined' && gameMode === 'ONLINE' && typeof onlineRole !== 'undefined' && onlineRole === 2);
+      panel.style.display = isOnlineGuest ? 'flex' : 'none';
+      // 非表示中はタッチを完全に下のキャンバスへ通す。
+      panel.style.pointerEvents = isOnlineGuest ? 'auto' : 'none';
+    };
+    updateVisibility();
+    setInterval(updateVisibility, 100);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensurePanel);
   else ensurePanel();
