@@ -129,12 +129,15 @@ wss.on('connection',ws=>{
         }
         return;
       }
-      if(msg.action==='nextRound' && room.roundOver){
+      if(msg.action==='nextRound'){
+        // ラウンド終了中だけ受理。クライアントの再送・同時押しは安全に無視する。
+        if(!room.roundOver || room.ended) return;
         room.roundOver=false;
         for(const p of room.players)p.alive=true;
         const st=snapshot(room);
         // 次ラウンド開始通知は、押した本人を含む全員へ送る。
-        for(const p of room.players) send(p.ws,{type:'startRound',...st});
+        for(const p of room.players) send(p.ws,{type:'startRound',started:true,...st});
+        console.log(`次ラウンド開始: ${room.password}`);
         return;
       }
       return;
