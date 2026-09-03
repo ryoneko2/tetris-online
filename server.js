@@ -53,7 +53,7 @@ wss.on('connection',ws=>{
       removePlayer(ws,false);
       const password=/^\d{6}$/.test(String(msg.password||''))&&!rooms.has(String(msg.password))?String(msg.password):makePassword();
       const n=[2,3,4].includes(Number(msg.playerCount))?Number(msg.playerCount):2;
-      const room={password,playerCount:n,players:[],started:false,roundOver:false};
+      const room={password,playerCount:n,players:[],started:false,roundOver:false,round:0};
       rooms.set(password,room);
       const player={ws,role:1,wins:0,alive:true,name:cleanName(msg.name, 'PLAYER 1')}; room.players.push(player); ws.room=room; ws.role=1;
       send(ws,{type:'roomJoined',role:1,room:password,password,playerCount:n,...snapshot(room)});
@@ -91,9 +91,9 @@ wss.on('connection',ws=>{
         if(me.role!==1) return send(ws,{type:'error',message:'対戦を開始できるのはホストだけです。'});
         if(room.started) return;
         if(room.players.length!==room.playerCount) return send(ws,{type:'error',message:`まだ人数がそろっていません（${room.players.length}/${room.playerCount}人）。`});
-        room.started=true; room.roundOver=false; for(const p of room.players)p.alive=true;
+        room.started=true; room.roundOver=false; room.round=1; for(const p of room.players)p.alive=true;
         const st=snapshot(room);
-        const startMessage={type:'start',playerCount:room.playerCount,count:room.players.length,started:true,...st};
+        const startMessage={type:'start',playerCount:room.playerCount,count:room.players.length,round:room.round,started:true,...st};
         for(const p of room.players){ send(p.ws,{type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:true,...st}); send(p.ws,startMessage); }
         for(const delay of [500,1500,3000]){
           setTimeout(()=>{ const r=rooms.get(room.password); if(!r||!r.started||r.players.length<r.playerCount)return; const latest=snapshot(r); for(const pl of r.players)send(pl.ws,{type:'start',playerCount:r.playerCount,count:r.players.length,started:true,...latest}); },delay);
@@ -136,7 +136,8 @@ wss.on('connection',ws=>{
         for(const p of room.players)p.alive=true;
         const st=snapshot(room);
         // 次ラウンド開始通知は、押した本人を含む全員へ送る。
-        for(const p of room.players) send(p.ws,{type:'startRound',started:true,...st});
+        room.round=(room.round||1)+1;
+        for(const p of room.players) send(p.ws,{type:'startRound',round:room.round,started:true,...st});
         console.log(`次ラウンド開始: ${room.password}`);
         return;
       }
