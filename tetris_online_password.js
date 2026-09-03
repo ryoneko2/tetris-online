@@ -2227,6 +2227,9 @@ function connectOnlineSocket(action) {
       onlinePlayerNames = msg.names || onlinePlayerNames || {};
       isRoundOver = true;
       isMatchOver = !!msg.matchOver;
+      // ラウンド終了時に古いポーズ状態を持ち越さない。
+      isPaused = false;
+      countdownTime = 0;
       onlineMatchWinnerRole = Number(msg.matchWinner) || 0;
       roundWinner = onlineRoundWinnerRole ? `PLAYER${onlineRoundWinnerRole}` : '';
       onlineRoundReadySent = false;
@@ -2240,6 +2243,9 @@ function connectOnlineSocket(action) {
       onlineRoundWinnerRole = 0;
       onlineRoundReadySent = false;
       isMatchOver = false;
+      isRoundOver = false;
+      isPaused = false;
+      countdownTime = 0;
       gameMode = 'ONLINE';
       nextRound();
       sendLocalOnlineState(true);
@@ -2253,6 +2259,8 @@ function connectOnlineSocket(action) {
       onlineRoundWinnerRole = 0;
       isMatchOver = true;
       isRoundOver = true;
+      isPaused = false;
+      countdownTime = 0;
       onlineStatus = (onlinePlayerNames[onlineMatchWinnerRole] || ('PLAYER ' + onlineMatchWinnerRole)) + ' Win';
       return;
     }
