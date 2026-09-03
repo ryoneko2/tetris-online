@@ -322,8 +322,7 @@ function draw() {
     return; 
   }
 
-  // 1. UIは常に描画
-  drawUI();
+  // 1. UI描画は各ゲーム処理側で行う
 
   // 2. P1ボードを描画
   push();
@@ -1840,9 +1839,9 @@ function handleOnlineGuestInput() {
     onlineSocket.send(JSON.stringify({
       type: 'inputState',
       state: {
-        left: keyIsDown(65),
-        right: keyIsDown(68),
-        down: keyIsDown(83)
+        left: !!onlineGuestKeyState.left || keyIsDown(65),
+        right: !!onlineGuestKeyState.right || keyIsDown(68),
+        down: !!onlineGuestKeyState.down || keyIsDown(83)
       }
     }));
   } catch (e) {
@@ -2799,139 +2798,133 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
     }
   }
 }
+
 /* ==========================================================
-   スマホ用タップ操作 + スマホ用プレイモード選択
+   スマホ用タップ操作 + プレイモード選択 + オンライン入力
    ========================================================== */
 (function addMobileTetrisControls() {
-  let modeWrap = null;
-  let gameWrap = null;
+  let modeWrap = null, gameWrap = null;
 
-  function baseButtonStyle() {
-    return (
-      'min-width:56px;min-height:48px;padding:7px 10px;' +
-      'font-size:18px;font-weight:bold;border:1px solid #777;' +
-      'border-radius:8px;background:#eee;color:#111;' +
-      'touch-action:none;user-select:none;-webkit-user-select:none;'
-    );
-  }
-
-  function makeButton(label, onPress) {
+  function button(label, press, release) {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = label;
-    b.style.cssText = baseButtonStyle();
-    const press = e => {
-      e.preventDefault();
-      e.stopPropagation();
-      onPress();
-    };
-    b.addEventListener('pointerdown', press, {passive:false});
-    b.addEventListener('touchstart', press, {passive:false});
+    b.style.cssText =
+      'min-width:56px;min-height:48px;padding:7px 10px;font-size:18px;' +
+      'font-weight:bold;border:1px solid #777;border-radius:8px;' +
+      'background:#eee;color:#111;touch-action:none;user-select:none;';
+    const down = e => { e.preventDefault(); e.stopPropagation(); press(); };
+    const up = e => { e.preventDefault(); e.stopPropagation(); if (release) release(); };
+    b.addEventListener('pointerdown', down, {passive:false});
+    b.addEventListener('pointerup', up, {passive:false});
+    b.addEventListener('pointercancel', up, {passive:false});
+    b.addEventListener('touchstart', down, {passive:false});
+    b.addEventListener('touchend', up, {passive:false});
     return b;
   }
 
-  function startSelectedMode(mode, index) {
+  function mode(mode, index) {
     selectedButtonIndex = index;
-
-    if (mode === 'ONLINE') {
-      startOnlineMenu();
-      return;
-    }
-
+    if (mode === 'ONLINE') { startOnlineMenu(); return; }
     gameMode = mode;
     nextRound();
   }
 
-  function createModeButtons() {
+  function makeModes() {
     if (modeWrap) return;
-
     modeWrap = document.createElement('div');
     modeWrap.id = 'mobile-tetris-mode-controls';
     modeWrap.style.cssText =
       'position:fixed;left:50%;bottom:12px;transform:translateX(-50%);' +
       'z-index:100000;width:min(96vw,560px);display:flex;flex-wrap:wrap;' +
-      'justify-content:center;gap:8px;padding:8px;box-sizing:border-box;' +
-      'touch-action:none;user-select:none;';
-
-    const defs = [
-      ['1P SOLO', 'SOLO', 0],
-      ['1P vs CPU', 'VS_CPU', 1],
-      ['1P vs 2P', 'VS_LOCAL', 2],
-      ['ONLINE', 'ONLINE', 3]
-    ];
-
-    defs.forEach(([label, mode, index]) => {
-      const b = makeButton(label, () => startSelectedMode(mode, index));
-      b.style.minWidth = '120px';
-      b.style.minHeight = '52px';
-      b.style.fontSize = '16px';
+      'justify-content:center;gap:8px;padding:8px;box-sizing:border-box;touch-action:none;';
+    [['1P SOLO','SOLO',0],['1P vs CPU','VS_CPU',1],
+     ['1P vs 2P','VS_LOCAL',2],['ONLINE','ONLINE',3]].forEach(x => {
+      const b = button(x[0], () => mode(x[1], x[2]));
+      b.style.minWidth='120px'; b.style.minHeight='52px'; b.style.fontSize='16px';
       modeWrap.appendChild(b);
     });
-
     document.body.appendChild(modeWrap);
   }
 
-  function fireKey(key) {
-    const target = document.activeElement || document.body;
-    const code = key === ' ' ? 'Space' : key;
-
-    target.dispatchEvent(new KeyboardEvent('keydown', {
-      key, code, bubbles:true, cancelable:true
-    }));
-
-    if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowDown') {
-      setTimeout(() => {
-        target.dispatchEvent(new KeyboardEvent('keyup', {
-          key, code, bubbles:true, cancelable:true
+  function guestState(name, value) {
+    if (typeof onlineGuestKeyState === 'undefined') return;
+    onlineGuestKeyState[name] = value;
+    if (typeof onlineRole !== 'undefined' && onlineRole === 2 &&
+        onlineSocket && onlineSocket.readyState === WebSocket.OPEN) {
+      try {
+        onlineSocket.send(JSON.stringify({
+          type:'inputState',
+          state:{
+            left:!!onlineGuestKeyState.left,
+            right:!!onlineGuestKeyState.right,
+            down:!!onlineGuestKeyState.down
+          }
         }));
-      }, 70);
+      } catch (_) {}
     }
   }
 
-  function createGameButtons() {
-    if (gameWrap) return;
+  function action(a) {
+    if (typeof gameMode !== 'undefined' && gameMode === 'ONLINE') {
+      if (onlineRole === 2) sendOnlineAction(a);
+      else if (onlineRole === 1) handleOnlineRemoteAction(a);
+      return;
+    }
+    const keys = {rotateLeft:'z',rotateRight:'x',hardDrop:' ',
+                  hold:'c',pause:'p'};
+    const k = keys[a]; if (!k) return;
+    const t = document.activeElement || document.body;
+    t.dispatchEvent(new KeyboardEvent('keydown',{
+      key:k,code:k===' '?'Space':k,bubbles:true,cancelable:true
+    }));
+  }
 
+  function makeGame() {
+    if (gameWrap) return;
     gameWrap = document.createElement('div');
-    gameWrap.id = 'mobile-tetris-controls';
+    gameWrap.id='mobile-tetris-controls';
     gameWrap.style.cssText =
       'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);' +
       'z-index:99999;width:min(96vw,520px);display:flex;flex-wrap:wrap;' +
-      'justify-content:center;gap:6px;padding:6px;box-sizing:border-box;' +
-      'touch-action:none;user-select:none;';
+      'justify-content:center;gap:6px;padding:6px;box-sizing:border-box;touch-action:none;';
 
-    const defs = [
-      ['←', 'ArrowLeft'], ['↓', 'ArrowDown'], ['→', 'ArrowRight'],
-      ['↺', 'z'], ['↻', 'x'], ['DROP', ' '], ['HOLD', 'c'], ['P', 'Escape']
+    const move = [
+      ['←','left'],['↓','down'],['→','right']
     ];
-
-    defs.forEach(([label, key]) => {
-      const b = makeButton(label, () => fireKey(key));
-      gameWrap.appendChild(b);
+    move.forEach(([label,name]) => {
+      gameWrap.appendChild(button(label,
+        () => {
+          if (gameMode==='ONLINE' && onlineRole===2) guestState(name,true);
+          else if (gameMode==='ONLINE' && onlineRole===1)
+            ({left:moveLeft, right:moveRight, down:moveDown}[name])(1);
+          else {
+            const k={left:'ArrowLeft',right:'ArrowRight',down:'ArrowDown'}[name];
+            const t=document.activeElement||document.body;
+            t.dispatchEvent(new KeyboardEvent('keydown',{key:k,code:k,bubbles:true,cancelable:true}));
+          }
+        },
+        () => { if(gameMode==='ONLINE' && onlineRole===2) guestState(name,false); }
+      ));
     });
-
+    [['↺','rotateLeft'],['↻','rotateRight'],['DROP','hardDrop'],
+     ['HOLD','hold'],['P','pause']].forEach(([label,a]) =>
+      gameWrap.appendChild(button(label,()=>action(a)))
+    );
     document.body.appendChild(gameWrap);
   }
 
-  function updateVisibility() {
-    const isTitle = (typeof gameMode !== 'undefined' && gameMode === 'TITLE');
-
-    if (modeWrap) modeWrap.style.display = isTitle ? 'flex' : 'none';
-    if (gameWrap) gameWrap.style.display = isTitle ? 'none' : 'flex';
+  function update() {
+    const title = typeof gameMode!=='undefined' && gameMode==='TITLE';
+    if(modeWrap) modeWrap.style.display=title?'flex':'none';
+    if(gameWrap) gameWrap.style.display=title?'none':'flex';
   }
 
-  function createAll() {
-    if (document.getElementById('mobile-tetris-mode-controls')) return;
-    createModeButtons();
-    createGameButtons();
-    updateVisibility();
-
-    // ゲームモードが変わったとき自動で表示を切り替える
-    setInterval(updateVisibility, 100);
+  function init() {
+    if(document.getElementById('mobile-tetris-mode-controls')) return;
+    makeModes(); makeGame(); update(); setInterval(update,100);
   }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', createAll, {once:true});
-  } else {
-    createAll();
-  }
+  if(document.readyState==='loading')
+    document.addEventListener('DOMContentLoaded',init,{once:true});
+  else init();
 })();
