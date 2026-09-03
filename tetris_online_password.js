@@ -1372,9 +1372,9 @@ function touchStarted(event) {
 
 function keyReleased() {
   if (gameMode === 'ONLINE' && onlineRole === 2) {
-    if (keyCode === LEFT_ARROW) onlineGuestKeyState.left = false;
-    else if (keyCode === RIGHT_ARROW) onlineGuestKeyState.right = false;
-    else if (keyCode === DOWN_ARROW) onlineGuestKeyState.down = false;
+    if (key === 'a' || key === 'A') onlineGuestKeyState.left = false;
+    else if (key === 'd' || key === 'D') onlineGuestKeyState.right = false;
+    else if (key === 's' || key === 'S') onlineGuestKeyState.down = false;
   }
 }
 
@@ -2209,11 +2209,15 @@ function keyPressed() {
       if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW || key === 'w' || key === 'W' || key === 'a' || key === 'A') sendOnlineAction('nextRound');
       return false;
     }
-    if (keyCode === LEFT_ARROW) { onlineGuestKeyState.left = true; moveLeft(2); }
-    else if (keyCode === RIGHT_ARROW) { onlineGuestKeyState.right = true; moveRight(2); }
-    else if (keyCode === DOWN_ARROW) { onlineGuestKeyState.down = true; moveDown(2); }
-    else if (keyCode === UP_ARROW) { rotateRight(2); sendOnlineAction('rotateRight'); }
+    // 元の操作系を維持：A=左 / D=右 / S=下 / W=ハードドロップ、矢印=回転
+    if (key === 'a' || key === 'A') { onlineGuestKeyState.left = true; moveLeft(2); sendOnlineAction('inputState'); }
+    else if (key === 'd' || key === 'D') { onlineGuestKeyState.right = true; moveRight(2); sendOnlineAction('inputState'); }
+    else if (key === 's' || key === 'S') { onlineGuestKeyState.down = true; moveDown(2); sendOnlineAction('inputState'); }
     else if (key === 'w' || key === 'W') { hardDrop(2); sendOnlineAction('hardDrop'); }
+    else if (keyCode === LEFT_ARROW) { rotateRight(2); sendOnlineAction('rotateRight'); }
+    else if (keyCode === RIGHT_ARROW) { rotateLeft(2); sendOnlineAction('rotateLeft'); }
+    else if (keyCode === UP_ARROW) { rotateLeft(2); sendOnlineAction('rotateLeft'); }
+    else if (keyCode === DOWN_ARROW) { rotateRight(2); sendOnlineAction('rotateRight'); }
     else if (key === 'c' || key === 'C') { horudoSuru(2); sendOnlineAction('hold'); }
     else if (key === 'p' || key === 'P') sendOnlineAction('pause');
     return false;
