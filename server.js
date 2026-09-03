@@ -16,7 +16,7 @@ function snapshot(room){
   return {scores,alive,names};
 }
 function roomStatus(room){
-  const st=snapshot(room); return {type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:!!room.started,scores:st.scores,alive:st.alive};
+  const st=snapshot(room); return {type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:!!room.started,scores:st.scores,alive:st.alive,names:st.names};
 }
 function makePassword(){ let p; do p=String(Math.floor(100000+Math.random()*900000)); while(rooms.has(p)); return p; }
 function cleanName(name,fallback){
@@ -77,7 +77,7 @@ wss.on('connection',ws=>{
       return;
     }
 
-    const room=ws.room; if(!room) return send(ws,{type:'error',message:'先に部屋へ参加してください。'});
+    const room=ws.room; if(!room || room.ended) return;
     const me=room.players.find(p=>p.ws===ws); if(!me) return;
 
     if(msg.type==='playerState'){
@@ -115,7 +115,17 @@ wss.on('connection',ws=>{
           if(winner) winner.wins++;
           const matchWinner=winner&&winner.wins>=2?winner.role:0;
           const st=snapshot(room);
-          broadcast(room,{type:'roundOver',winner,matchOver:!!matchWinner,matchWinner,scores:st.scores,alive:st.alive});
+          if(matchWinner){
+            // 2勝した時点でマッチ終了。結果を全員へ通知してから部屋を解散する。
+            const result={type:'matchOver',winner:matchWinner,scores:st.scores,alive:st.alive,names:st.names};
+            for(const p of room.players) send(p.ws,result);
+            room.ended=true;
+            rooms.delete(room.password);
+            for(const p of room.players){ p.ws.room=null; p.ws.role=0; }
+            console.log(`マッチ終了・部屋解散: ${room.password} winner=PLAYER ${matchWinner}`);
+          } else {
+            broadcast(room,{type:'roundOver',winner,matchOver:false,matchWinner:0,scores:st.scores,alive:st.alive,names:st.names});
+          }
         }
         return;
       }
