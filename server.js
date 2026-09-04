@@ -53,7 +53,7 @@ wss.on('connection',ws=>{
       removePlayer(ws,false);
       const password=/^\d{6}$/.test(String(msg.password||''))&&!rooms.has(String(msg.password))?String(msg.password):makePassword();
       const n=[2,3,4].includes(Number(msg.playerCount))?Number(msg.playerCount):2;
-      const room={password,playerCount:n,players:[],started:false,roundOver:false,round:0};
+      const room={password,playerCount:n,players:[],started:false,roundOver:false,round:0,ended:false};
       rooms.set(password,room);
       const player={ws,role:1,wins:0,alive:true,name:cleanName(msg.name, 'PLAYER 1')}; room.players.push(player); ws.room=room; ws.role=1;
       send(ws,{type:'roomJoined',role:1,room:password,password,playerCount:n,...snapshot(room)});
@@ -134,11 +134,12 @@ wss.on('connection',ws=>{
         if(!room.roundOver || room.ended) return;
         room.roundOver=false;
         for(const p of room.players)p.alive=true;
-        const st=snapshot(room);
-        // 次ラウンド開始通知は、押した本人を含む全員へ送る。
         room.round=(room.round||1)+1;
-        for(const p of room.players) send(p.ws,{type:'startRound',round:room.round,started:true,...st});
-        console.log(`次ラウンド開始: ${room.password}`);
+        const st=snapshot(room);
+        // サーバーがラウンド番号を確定し、全員へ同じ startRound を送る。
+        const startRoundMessage={type:'startRound',round:room.round,started:true,...st};
+        for(const p of room.players) send(p.ws,startRoundMessage);
+        console.log(`次ラウンド開始: ${room.password} round=${room.round}`);
         return;
       }
       return;
