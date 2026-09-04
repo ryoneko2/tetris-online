@@ -53,7 +53,7 @@ wss.on('connection',ws=>{
       removePlayer(ws,false);
       const password=/^\d{6}$/.test(String(msg.password||''))&&!rooms.has(String(msg.password))?String(msg.password):makePassword();
       const n=[2,3,4].includes(Number(msg.playerCount))?Number(msg.playerCount):2;
-      const room={password,playerCount:n,players:[],started:false,roundOver:false,round:0,ended:false};
+      const room={password,playerCount:n,players:[],started:false,roundOver:false,round:0};
       rooms.set(password,room);
       const player={ws,role:1,wins:0,alive:true,name:cleanName(msg.name, 'PLAYER 1')}; room.players.push(player); ws.room=room; ws.role=1;
       send(ws,{type:'roomJoined',role:1,room:password,password,playerCount:n,...snapshot(room)});
@@ -125,6 +125,20 @@ wss.on('connection',ws=>{
             console.log(`マッチ終了・部屋解散: ${room.password} winner=PLAYER ${matchWinner}`);
           } else {
             broadcast(room,{type:'roundOver',winner,matchOver:false,matchWinner:0,scores:st.scores,alive:st.alive,names:st.names});
+
+            // ラウンド終了後は3秒待って自動的に次のラウンドを開始する。
+            // 「誰かが操作するまで待つ」方式にはせず、サーバーを唯一の判定元にする。
+            const endingRound = room.round;
+            setTimeout(()=>{
+              const r = rooms.get(room.password);
+              if(!r || r.ended || !r.started || !r.roundOver || r.round !== endingRound) return;
+              r.roundOver = false;
+              for(const p of r.players) p.alive = true;
+              r.round = (r.round || 1) + 1;
+              const latest = snapshot(r);
+              for(const p of r.players) send(p.ws,{type:'startRound',round:r.round,started:true,...latest});
+              console.log(`3秒後に次ラウンド開始: ${r.password} round=${r.round}`);
+            },3000);
           }
         }
         return;
@@ -134,12 +148,11 @@ wss.on('connection',ws=>{
         if(!room.roundOver || room.ended) return;
         room.roundOver=false;
         for(const p of room.players)p.alive=true;
-        room.round=(room.round||1)+1;
         const st=snapshot(room);
-        // サーバーがラウンド番号を確定し、全員へ同じ startRound を送る。
-        const startRoundMessage={type:'startRound',round:room.round,started:true,...st};
-        for(const p of room.players) send(p.ws,startRoundMessage);
-        console.log(`次ラウンド開始: ${room.password} round=${room.round}`);
+        // 次ラウンド開始通知は、押した本人を含む全員へ送る。
+        room.round=(room.round||1)+1;
+        for(const p of room.players) send(p.ws,{type:'startRound',round:room.round,started:true,...st});
+        console.log(`次ラウンド開始: ${room.password}`);
         return;
       }
       return;
