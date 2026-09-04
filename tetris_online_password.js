@@ -362,6 +362,12 @@ function drawOnlineFourPlayerScreen() {
   noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(18);
   text(`${onlinePlayerNames[onlineRole] || 'PLAYER '+onlineRole}  YOU`,boardX+selfW/2,selfY-28);
   fill(220); textSize(14); text(`SCORE ${sukoa}`,boardX+selfW/2,selfY+selfH+20);
+  // 獲得した星は全員の画面で、自分の盤面の下に表示する。
+  const selfWins = Number(onlineScores[onlineRole] || 0);
+  if(selfWins > 0){
+    fill(255,220,0); stroke(0); strokeWeight(2); textSize(32);
+    text('★'.repeat(Math.min(selfWins, MATCH_WIN_COUNT)),boardX+selfW/2,selfY+selfH+52);
+  }
 
   // 自分の盤面の右：NEXT 6個
   const nextX=boardX+selfW+gap;
@@ -379,6 +385,11 @@ function drawOnlineFourPlayerScreen() {
     drawOnlineRemoteBoardAt(oppX,y,smallCell,st);
     noStroke(); fill(215); textSize(14); text(`${onlinePlayerNames[role] || 'PLAYER '+role}`,oppX+oppW/2,y-16);
     fill(190); textSize(12); text(`SCORE ${st?Number(st.score)||0:0}`,oppX+oppW/2,y+oppH+15);
+    const oppWins = Number(onlineScores[role] || (st && st.wins) || 0);
+    if(oppWins > 0){
+      fill(255,220,0); stroke(0); strokeWeight(2); textSize(28);
+      text('★'.repeat(Math.min(oppWins, MATCH_WIN_COUNT)),oppX+oppW/2,y+oppH+43);
+    }
   });
 
   noStroke(); fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${count} PLAYERS`,width/2,18);
@@ -403,11 +414,6 @@ function drawOnlineFourPlayerScreen() {
     else if(onlineRoundWinnerRole) text(`${winnerName} WINS ROUND!`,width/2,height/2-20);
     textSize(16); text(isMatchOver ? '何かキーを押すとモード選択へ' : '次のラウンドを開始します',width/2,height/2+25);
 
-    // 勝ったプレイヤー本人の画面下に星を表示。
-    if(winnerRole && onlineRole === winnerRole){
-      fill(255,220,0); stroke(0); strokeWeight(2); textSize(46);
-      text('★',boardX+selfW/2,selfY+selfH+55);
-    }
   }
 }
 
