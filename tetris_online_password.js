@@ -397,10 +397,17 @@ function drawOnlineFourPlayerScreen() {
   }
   if(isRoundOver){
     fill(0,0,0,175); rect(0,0,width,height); fill(255); textSize(27);
-    const winnerName = onlinePlayerNames[onlineMatchWinnerRole || onlineRoundWinnerRole] || ('PLAYER ' + (onlineMatchWinnerRole || onlineRoundWinnerRole));
+    const winnerRole = onlineMatchWinnerRole || onlineRoundWinnerRole;
+    const winnerName = onlinePlayerNames[winnerRole] || ('PLAYER ' + winnerRole);
     if(isMatchOver && onlineMatchWinnerRole) text(`${winnerName} Win`,width/2,height/2-20);
     else if(onlineRoundWinnerRole) text(`${winnerName} WINS ROUND!`,width/2,height/2-20);
-    textSize(16); text(isMatchOver ? '何かキーを押すとモード選択へ' : 'A / S / D / W / C / 回転 で次のラウンド',width/2,height/2+25);
+    textSize(16); text(isMatchOver ? '何かキーを押すとモード選択へ' : '次のラウンドを開始します',width/2,height/2+25);
+
+    // 勝ったプレイヤー本人の画面下に星を表示。
+    if(winnerRole && onlineRole === winnerRole){
+      fill(255,220,0); stroke(0); strokeWeight(2); textSize(46);
+      text('★',boardX+selfW/2,selfY+selfH+55);
+    }
   }
 }
 
@@ -1643,11 +1650,12 @@ function getNextBlockType(playerIndex) { // 1 or 2 (CPU)
   let bag = (playerIndex === 1) ? p1BurokkuBaggu : p2BurokkuBaggu;
   let nextBag = (playerIndex === 1) ? p1TsugiBurokkuBaggu : p2TsugiBurokkuBaggu;
 
-  if (bag.length === 0) {
-    bag = nextBag;
+  // 現在の袋が空になったら、次の「完全な7種袋」に切り替える。
+  if (!Array.isArray(bag) || bag.length === 0) {
+    bag = (Array.isArray(nextBag) && nextBag.length > 0) ? nextBag : fuyasuBaggu();
     nextBag = fuyasuBaggu();
   }
-  
+
   if (playerIndex === 1) {
     p1BurokkuBaggu = bag;
     p1TsugiBurokkuBaggu = nextBag;
@@ -1655,8 +1663,8 @@ function getNextBlockType(playerIndex) { // 1 or 2 (CPU)
     p2BurokkuBaggu = bag;
     p2TsugiBurokkuBaggu = nextBag;
   }
-  
-  return bag.pop(); 
+
+  return bag.pop();
 }
 
 // spawnNewBlock を playerIndex (1, 2) に対応
@@ -1707,14 +1715,11 @@ function spawnNewBlock(playerIndex) { // 1: P1, 2: P2/CPU
   }
 }
 
-// バッグを補充してシャッフルする
+// 7種1巡バッグ：I/J/L/O/S/T/Zを必ず1回ずつ含む袋を作る。
 function fuyasuBaggu() {
-  let newBag = [];
-  for (let i = 0; i < burokkuShurui.length; i++) {
-    newBag.push(i);
-  }
+  const newBag = [0, 1, 2, 3, 4, 5, 6];
   shaffuru(newBag);
-  return newBag; 
+  return newBag;
 }
 
 // Fisher-Yates シャッフル関数
@@ -3121,6 +3126,15 @@ function nextRound() {
  
   isRoundOver = false;
   isPaused = false;
+
+  // オンラインは各ラウンドを新しい7種1巡から開始する。
+  if (gameMode === 'ONLINE') {
+    p1BurokkuBaggu = fuyasuBaggu();
+    p1TsugiBurokkuBaggu = fuyasuBaggu();
+    p2BurokkuBaggu = fuyasuBaggu();
+    p2TsugiBurokkuBaggu = fuyasuBaggu();
+  }
+
   isStarted = true; // ★ ゲーム開始
   countdownTime = millis(); 
  
