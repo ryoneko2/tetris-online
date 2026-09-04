@@ -116,9 +116,6 @@ var wasBGamepadPressed = false;
 var wasXGamepadPressed = false;
 var wasYGamepadPressed = false; 
 var wasUpGamepadPressed = false;
-var wasDownGamepadPressed = false;
-var wasLeftGamepadPressed = false;
-var wasRightGamepadPressed = false;
 var wasLGamepadPressed = false; 
 var wasRGamepadPressed = false;
 var wasStartGamepadPressed = false; 
@@ -1263,34 +1260,66 @@ function drawMatchOverScreen() {
 // ▲▲▲
 
 
+// Nintendo Switch Joy-Con 用 Gamepad API アダプター
+// Chromium は単体Joy-Conを標準Gamepad配列へ再マップするため、
+// ゲーム本体には「通常ゲームパッド」と同じ番号で渡す。
+(function installJoyConGamepadAdapter(){
+  if (!navigator.getGamepads || navigator.__tetrisJoyConAdapterInstalled) return;
+  const nativeGetGamepads = navigator.getGamepads.bind(navigator);
+  navigator.__tetrisJoyConAdapterInstalled = true;
+
+  function pressed(pad, indexes){
+    return indexes.some(i => pad.buttons && pad.buttons[i] && pad.buttons[i].pressed);
+  }
+  function makeButton(pressedState){ return {pressed:!!pressedState, touched:!!pressedState, value:pressedState?1:0}; }
+
+  navigator.getGamepads = function(){
+    const native = Array.from(nativeGetGamepads());
+    const index = native.findIndex(p => p && p.connected && /joy.?con/i.test(p.id || ''));
+    if (index < 0) return native;
+
+    const pad = native[index];
+    const id = String(pad.id || '');
+    const isL = /joy.?con.*\(l\)|joy.?con.*left/i.test(id);
+    const isR = /joy.?con.*\(r\)|joy.?con.*right/i.test(id);
+    if (!isL && !isR) return native;
+
+    const b = Array.from({length:22}, (_,i) => pad.buttons[i] || makeButton(false));
+    const out = Object.assign({}, pad);
+    out.buttons = b;
+    out.axes = Array.from(pad.axes || []);
+
+    if (isL) {
+      // Joy-Con(L)横持ち：十字4方向を0～3へ割り当て。
+      // 0=左 / 1=下 / 2=上 / 3=右
+      const left  = pressed(pad,[14,0]);
+      const down  = pressed(pad,[13,1]);
+      const up    = pressed(pad,[12,2]);
+      const right = pressed(pad,[15,3]);
+      b[0]=makeButton(left); b[1]=makeButton(down); b[2]=makeButton(up); b[3]=makeButton(right);
+      // SL/SR → L/R (4/5)。追加ボタン番号も両方見る。
+      b[4]=makeButton(pressed(pad,[4,18]));
+      b[5]=makeButton(pressed(pad,[5,19]));
+      // START相当は +/− をまとめて受ける。
+      b[9]=makeButton(pressed(pad,[9,10]));
+      // 元コードのD-pad参照用にも値を入れる。ただしゲーム側ではJoy-Con(L)の回転を0～3で判定する。
+      b[12]=makeButton(up); b[13]=makeButton(down); b[14]=makeButton(left); b[15]=makeButton(right);
+    } else {
+      // Joy-Con(R)：A/B/X/Yは標準の0～3をそのまま利用。
+      b[0]=makeButton(pressed(pad,[0])); b[1]=makeButton(pressed(pad,[1]));
+      b[2]=makeButton(pressed(pad,[2])); b[3]=makeButton(pressed(pad,[3]));
+      b[4]=makeButton(pressed(pad,[4,20])); b[5]=makeButton(pressed(pad,[5,21]));
+      b[9]=makeButton(pressed(pad,[9,10]));
+    }
+    native[index] = out;
+    return native;
+  };
+})();
+
 // プレイヤーの入力処理
-// Nintendo Switch Joy-Con / Gamepad 対応
-function getPrimaryGamepad() {
-    if (!navigator.getGamepads) return null;
-    const pads = Array.from(navigator.getGamepads()).filter(g => g && g.connected);
-    if (!pads.length) return null;
-    // 片手Joy-ConはIDを優先判定。通常のゲームパッドは先頭を使用。
-    return pads.find(g => /Joy.?Con.*\(L\)/i.test(g.id || '')) ||
-           pads.find(g => /Joy.?Con.*\(R\)/i.test(g.id || '')) || pads[0];
-}
-
-function gamepadButtonPressed(gp, indexes) {
-    if (!gp || !gp.buttons) return false;
-    return indexes.some(i => gp.buttons[i] && gp.buttons[i].pressed);
-}
-
-function isLeftJoyCon(gp) {
-    return !!gp && /Joy.?Con.*\(L\)/i.test(gp.id || '');
-}
-
-function isRightJoyCon(gp) {
-    return !!gp && /Joy.?Con.*\(R\)/i.test(gp.id || '');
-}
-
 function handlePlayerInput() {
-    const gp = getPrimaryGamepad();
-    const leftJoyCon = isLeftJoyCon(gp);
-    const rightJoyCon = isRightJoyCon(gp);
+    const gamepads = navigator.getGamepads();
+    const gp = gamepads[0]; 
    
     // --- 汎用ボタン状態 (コントローラー) ---
     let isAPressed = false;
@@ -1300,8 +1329,6 @@ function handlePlayerInput() {
     let isLPressed = false;
     let isRPressed = false;
     let isStartPressed = false;
-    let isJoyHoldLPressed = false;
-    let isJoyHoldRPressed = false;
     
     let axisX = 0;
     let axisY = 0;
@@ -1311,43 +1338,20 @@ function handlePlayerInput() {
     let dpadRight = false;
     
     if (gp) {
-        axisX = Number(gp.axes?.[0] || 0);
-        axisY = Number(gp.axes?.[1] || 0);
-
-        if (leftJoyCon) {
-            // Joy-Con(L): スティック=移動、4方向ボタン=4つの回転入力
-            dpadUp = gamepadButtonPressed(gp, [11, 0, 12]);
-            dpadDown = gamepadButtonPressed(gp, [12, 1, 13]);
-            dpadLeft = gamepadButtonPressed(gp, [13, 2, 14]);
-            dpadRight = gamepadButtonPressed(gp, [14, 3, 15]);
-            // SL / SR = ホールド（ChromeOS上の番号差を吸収）
-            isJoyHoldLPressed = gamepadButtonPressed(gp, [9, 4, 15]);
-            isJoyHoldRPressed = gamepadButtonPressed(gp, [10, 5]);
-            isStartPressed = gamepadButtonPressed(gp, [4, 5, 9, 10]);
-        } else if (rightJoyCon) {
-            // Joy-Con(R): スティック=移動、A/B/X/Y=4つの回転入力
-            isAPressed = gamepadButtonPressed(gp, [0]);
-            isBPressed = gamepadButtonPressed(gp, [1]);
-            isXPressed = gamepadButtonPressed(gp, [2]);
-            isYPressed = gamepadButtonPressed(gp, [3]);
-            // SL / SR = ホールド
-            isJoyHoldLPressed = gamepadButtonPressed(gp, [9, 4]);
-            isJoyHoldRPressed = gamepadButtonPressed(gp, [10, 5]);
-            isStartPressed = gamepadButtonPressed(gp, [9, 10]);
-        } else {
-            // 通常のゲームパッド
-            isAPressed = gamepadButtonPressed(gp, [0]);
-            isBPressed = gamepadButtonPressed(gp, [1]);
-            isXPressed = gamepadButtonPressed(gp, [2]);
-            isYPressed = gamepadButtonPressed(gp, [3]);
-            isLPressed = gamepadButtonPressed(gp, [4]);
-            isRPressed = gamepadButtonPressed(gp, [5]);
-            isStartPressed = gamepadButtonPressed(gp, [9]);
-            dpadUp = gamepadButtonPressed(gp, [12]);
-            dpadDown = gamepadButtonPressed(gp, [13]);
-            dpadLeft = gamepadButtonPressed(gp, [14]);
-            dpadRight = gamepadButtonPressed(gp, [15]);
-        }
+        isAPressed = gp.buttons[0].pressed;
+        isBPressed = gp.buttons[1].pressed;
+        isXPressed = gp.buttons[2].pressed; 
+        isYPressed = gp.buttons[3].pressed; 
+        isLPressed = gp.buttons[4].pressed;
+        isRPressed = gp.buttons[5].pressed;
+        isStartPressed = gp.buttons[9].pressed;
+        
+        axisX = gp.axes[0]; 
+        axisY = gp.axes[1]; 
+        dpadUp = gp.buttons[12].pressed;
+        dpadDown = gp.buttons[13].pressed;
+        dpadLeft = gp.buttons[14].pressed;
+        dpadRight = gp.buttons[15].pressed;
     }
    
     // 状態 1: マッチ終了 (タイトルに戻る)
@@ -1443,18 +1447,21 @@ function handlePlayerInput() {
         }
        
         // --- ハードドロップ (W OR コントローラー上) ---
-        const isUpPressed = (axisY < -0.5 || dpadUp); // キーボードWはwindow.keydownだけで処理 
+        const isUpPressed = (axisY < -0.5); // Joy-Conの十字は回転専用、ハードドロップはスティック上 
         if (isUpPressed && !wasUpGamepadPressed) {
             hardDrop(1);
         }
         wasUpGamepadPressed = isUpPressed;
         // --- 回転 (コントローラー / Joy-Con) ---
-        if (leftJoyCon) {
-            // 4方向ボタンをすべて回転入力として使用
-            if (dpadUp && !wasUpGamepadPressed) rotateLeft(1);
-            if (dpadDown && !wasDownGamepadPressed) rotateRight(1);
-            if (dpadLeft && !wasLeftGamepadPressed) rotateLeft(1);
-            if (dpadRight && !wasRightGamepadPressed) rotateRight(1);
+        const joyPadId = String(gp?.id || '');
+        const isJoyL = /joy.?con.*\(l\)|joy.?con.*left/i.test(joyPadId);
+        const isJoyR = /joy.?con.*\(r\)|joy.?con.*right/i.test(joyPadId);
+        if (isJoyL) {
+            // Joy-Con(L): 十字4方向をすべて回転に使用。
+            if (isAPressed && !wasAGamepadPressed) rotateLeft(1);   // 左
+            if (isBPressed && !wasBGamepadPressed) rotateRight(1);  // 下
+            if (isXPressed && !wasXGamepadPressed) rotateLeft(1);   // 上
+            if (isYPressed && !wasYGamepadPressed) rotateRight(1);  // 右
         } else {
             if ((isBPressed && !wasBGamepadPressed) || (isYPressed && !wasYGamepadPressed)) { 
                 rotateRight(1); 
@@ -1464,11 +1471,8 @@ function handlePlayerInput() {
             }
         }
        
-        // --- ホールド (通常ゲームパッド / 片手Joy-Con) ---
-        if (leftJoyCon || rightJoyCon) {
-            if (isJoyHoldLPressed && !wasLGamepadPressed) horudoSuru(1);
-            if (isJoyHoldRPressed && !wasRGamepadPressed) horudoSuru(1);
-        } else if ((isLPressed && !wasLGamepadPressed) || (isRPressed && !wasRGamepadPressed)) {
+        // --- ホールド (コントローラー / 片手Joy-Con) ---
+        if ((isLPressed && !wasLGamepadPressed) || (isRPressed && !wasRGamepadPressed)) {
             horudoSuru(1);
         }
     }
@@ -1492,15 +1496,12 @@ function handlePlayerInput() {
         wasBGamepadPressed = isBPressed;
         wasXGamepadPressed = isXPressed;
         wasYGamepadPressed = isYPressed;
-        wasLGamepadPressed = isLPressed || isJoyHoldLPressed; 
-        wasRGamepadPressed = isRPressed || isJoyHoldRPressed; 
+        wasLGamepadPressed = isLPressed; 
+        wasRGamepadPressed = isRPressed; 
         
         if (! (isStarted && countdownTime === 0 && !isPaused) ) {
             wasUpGamepadPressed = (axisY < -0.5 || dpadUp); 
         }
-        wasDownGamepadPressed = dpadDown;
-        wasLeftGamepadPressed = dpadLeft;
-        wasRightGamepadPressed = dpadRight;
     }
     
     if (gameMode === 'TITLE') {
