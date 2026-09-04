@@ -57,7 +57,6 @@ var onlineStateApplyTimer = null;
 var onlinePrevHardDrop = false;
 var onlinePrevHold = false;
 var onlineRoundRequestSent = false;
-var onlineRound = 0;
 var onlineGuestInitialized = false;
 var onlineInitialStateSent = false;
 var titleButtons = [];
@@ -117,6 +116,9 @@ var wasBGamepadPressed = false;
 var wasXGamepadPressed = false;
 var wasYGamepadPressed = false; 
 var wasUpGamepadPressed = false;
+var wasDownGamepadPressed = false;
+var wasLeftGamepadPressed = false;
+var wasRightGamepadPressed = false;
 var wasLGamepadPressed = false; 
 var wasRGamepadPressed = false;
 var wasStartGamepadPressed = false; 
@@ -362,12 +364,6 @@ function drawOnlineFourPlayerScreen() {
   noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(18);
   text(`${onlinePlayerNames[onlineRole] || 'PLAYER '+onlineRole}  YOU`,boardX+selfW/2,selfY-28);
   fill(220); textSize(14); text(`SCORE ${sukoa}`,boardX+selfW/2,selfY+selfH+20);
-  // 獲得した星は全員の画面で、自分の盤面の下に表示する。
-  const selfWins = Number(onlineScores[onlineRole] || 0);
-  if(selfWins > 0){
-    fill(255,220,0); stroke(0); strokeWeight(2); textSize(32);
-    text('★'.repeat(Math.min(selfWins, MATCH_WIN_COUNT)),boardX+selfW/2,selfY+selfH+52);
-  }
 
   // 自分の盤面の右：NEXT 6個
   const nextX=boardX+selfW+gap;
@@ -385,11 +381,6 @@ function drawOnlineFourPlayerScreen() {
     drawOnlineRemoteBoardAt(oppX,y,smallCell,st);
     noStroke(); fill(215); textSize(14); text(`${onlinePlayerNames[role] || 'PLAYER '+role}`,oppX+oppW/2,y-16);
     fill(190); textSize(12); text(`SCORE ${st?Number(st.score)||0:0}`,oppX+oppW/2,y+oppH+15);
-    const oppWins = Number(onlineScores[role] || (st && st.wins) || 0);
-    if(oppWins > 0){
-      fill(255,220,0); stroke(0); strokeWeight(2); textSize(28);
-      text('★'.repeat(Math.min(oppWins, MATCH_WIN_COUNT)),oppX+oppW/2,y+oppH+43);
-    }
   });
 
   noStroke(); fill(255); textSize(15); text(`ROOM ${onlineRoom}   ${count} PLAYERS`,width/2,18);
@@ -408,12 +399,10 @@ function drawOnlineFourPlayerScreen() {
   }
   if(isRoundOver){
     fill(0,0,0,175); rect(0,0,width,height); fill(255); textSize(27);
-    const winnerRole = onlineMatchWinnerRole || onlineRoundWinnerRole;
-    const winnerName = onlinePlayerNames[winnerRole] || ('PLAYER ' + winnerRole);
+    const winnerName = onlinePlayerNames[onlineMatchWinnerRole || onlineRoundWinnerRole] || ('PLAYER ' + (onlineMatchWinnerRole || onlineRoundWinnerRole));
     if(isMatchOver && onlineMatchWinnerRole) text(`${winnerName} Win`,width/2,height/2-20);
     else if(onlineRoundWinnerRole) text(`${winnerName} WINS ROUND!`,width/2,height/2-20);
-    textSize(16); text(isMatchOver ? '何かキーを押すとモード選択へ' : '次のラウンドを開始します',width/2,height/2+25);
-
+    textSize(16); text(isMatchOver ? '何かキーを押すとモード選択へ' : 'A / S / D / W / C / 回転 で次のラウンド',width/2,height/2+25);
   }
 }
 
@@ -1275,30 +1264,33 @@ function drawMatchOverScreen() {
 
 
 // プレイヤーの入力処理
-
-// Nintendo Switch Joy-Con (片手持ち) 対応
-// Chrome/Gamepad API では Joy-Con の SL/SR が環境によって
-// buttons[4]/[5] または buttons[6]/[7] として報告される場合があるため、
-// 片手Joy-Conでは両方をHOLDとして扱う。Pro Controllerでは従来どおりL/Rを使用。
-function isSingleJoyConGamepad(gp) {
-  if (!gp) return false;
-  const id = String(gp.id || '').toLowerCase();
-  return id.includes('joy-con') || id.includes('joycon');
+// Nintendo Switch Joy-Con / Gamepad 対応
+function getPrimaryGamepad() {
+    if (!navigator.getGamepads) return null;
+    const pads = Array.from(navigator.getGamepads()).filter(g => g && g.connected);
+    if (!pads.length) return null;
+    // 片手Joy-ConはIDを優先判定。通常のゲームパッドは先頭を使用。
+    return pads.find(g => /Joy.?Con.*\(L\)/i.test(g.id || '')) ||
+           pads.find(g => /Joy.?Con.*\(R\)/i.test(g.id || '')) || pads[0];
 }
 
-function getSwitchHoldButtons(gp) {
-  if (!gp) return { left:false, right:false };
-  const pressed = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
-  const singleJoyCon = isSingleJoyConGamepad(gp);
-  return {
-    left: pressed(4) || (singleJoyCon && pressed(6)),
-    right: pressed(5) || (singleJoyCon && pressed(7))
-  };
+function gamepadButtonPressed(gp, indexes) {
+    if (!gp || !gp.buttons) return false;
+    return indexes.some(i => gp.buttons[i] && gp.buttons[i].pressed);
+}
+
+function isLeftJoyCon(gp) {
+    return !!gp && /Joy.?Con.*\(L\)/i.test(gp.id || '');
+}
+
+function isRightJoyCon(gp) {
+    return !!gp && /Joy.?Con.*\(R\)/i.test(gp.id || '');
 }
 
 function handlePlayerInput() {
-    const gamepads = navigator.getGamepads();
-    const gp = gamepads[0]; 
+    const gp = getPrimaryGamepad();
+    const leftJoyCon = isLeftJoyCon(gp);
+    const rightJoyCon = isRightJoyCon(gp);
    
     // --- 汎用ボタン状態 (コントローラー) ---
     let isAPressed = false;
@@ -1308,6 +1300,8 @@ function handlePlayerInput() {
     let isLPressed = false;
     let isRPressed = false;
     let isStartPressed = false;
+    let isJoyHoldLPressed = false;
+    let isJoyHoldRPressed = false;
     
     let axisX = 0;
     let axisY = 0;
@@ -1317,21 +1311,43 @@ function handlePlayerInput() {
     let dpadRight = false;
     
     if (gp) {
-        isAPressed = gp.buttons[0].pressed;
-        isBPressed = gp.buttons[1].pressed;
-        isXPressed = gp.buttons[2].pressed; 
-        isYPressed = gp.buttons[3].pressed; 
-        const joyConHold = getSwitchHoldButtons(gp);
-        isLPressed = joyConHold.left;
-        isRPressed = joyConHold.right;
-        isStartPressed = gp.buttons[9].pressed;
-        
-        axisX = gp.axes[0]; 
-        axisY = gp.axes[1]; 
-        dpadUp = gp.buttons[12].pressed;
-        dpadDown = gp.buttons[13].pressed;
-        dpadLeft = gp.buttons[14].pressed;
-        dpadRight = gp.buttons[15].pressed;
+        axisX = Number(gp.axes?.[0] || 0);
+        axisY = Number(gp.axes?.[1] || 0);
+
+        if (leftJoyCon) {
+            // Joy-Con(L): スティック=移動、4方向ボタン=4つの回転入力
+            dpadUp = gamepadButtonPressed(gp, [11, 0, 12]);
+            dpadDown = gamepadButtonPressed(gp, [12, 1, 13]);
+            dpadLeft = gamepadButtonPressed(gp, [13, 2, 14]);
+            dpadRight = gamepadButtonPressed(gp, [14, 3, 15]);
+            // SL / SR = ホールド（ChromeOS上の番号差を吸収）
+            isJoyHoldLPressed = gamepadButtonPressed(gp, [9, 4, 15]);
+            isJoyHoldRPressed = gamepadButtonPressed(gp, [10, 5]);
+            isStartPressed = gamepadButtonPressed(gp, [4, 5, 9, 10]);
+        } else if (rightJoyCon) {
+            // Joy-Con(R): スティック=移動、A/B/X/Y=4つの回転入力
+            isAPressed = gamepadButtonPressed(gp, [0]);
+            isBPressed = gamepadButtonPressed(gp, [1]);
+            isXPressed = gamepadButtonPressed(gp, [2]);
+            isYPressed = gamepadButtonPressed(gp, [3]);
+            // SL / SR = ホールド
+            isJoyHoldLPressed = gamepadButtonPressed(gp, [9, 4]);
+            isJoyHoldRPressed = gamepadButtonPressed(gp, [10, 5]);
+            isStartPressed = gamepadButtonPressed(gp, [9, 10]);
+        } else {
+            // 通常のゲームパッド
+            isAPressed = gamepadButtonPressed(gp, [0]);
+            isBPressed = gamepadButtonPressed(gp, [1]);
+            isXPressed = gamepadButtonPressed(gp, [2]);
+            isYPressed = gamepadButtonPressed(gp, [3]);
+            isLPressed = gamepadButtonPressed(gp, [4]);
+            isRPressed = gamepadButtonPressed(gp, [5]);
+            isStartPressed = gamepadButtonPressed(gp, [9]);
+            dpadUp = gamepadButtonPressed(gp, [12]);
+            dpadDown = gamepadButtonPressed(gp, [13]);
+            dpadLeft = gamepadButtonPressed(gp, [14]);
+            dpadRight = gamepadButtonPressed(gp, [15]);
+        }
     }
    
     // 状態 1: マッチ終了 (タイトルに戻る)
@@ -1432,16 +1448,27 @@ function handlePlayerInput() {
             hardDrop(1);
         }
         wasUpGamepadPressed = isUpPressed;
-        // --- 回転 (コントローラー) ---
-        if ((isBPressed && !wasBGamepadPressed) || (isYPressed && !wasYGamepadPressed)) { 
-            rotateRight(1); 
-        }
-        if ((isAPressed && !wasAGamepadPressed) || (isXPressed && !wasXGamepadPressed)) { 
-            rotateLeft(1); 
+        // --- 回転 (コントローラー / Joy-Con) ---
+        if (leftJoyCon) {
+            // 4方向ボタンをすべて回転入力として使用
+            if (dpadUp && !wasUpGamepadPressed) rotateLeft(1);
+            if (dpadDown && !wasDownGamepadPressed) rotateRight(1);
+            if (dpadLeft && !wasLeftGamepadPressed) rotateLeft(1);
+            if (dpadRight && !wasRightGamepadPressed) rotateRight(1);
+        } else {
+            if ((isBPressed && !wasBGamepadPressed) || (isYPressed && !wasYGamepadPressed)) { 
+                rotateRight(1); 
+            }
+            if ((isAPressed && !wasAGamepadPressed) || (isXPressed && !wasXGamepadPressed)) { 
+                rotateLeft(1); 
+            }
         }
        
-        // --- ホールド (コントローラー) ---
-        if ((isLPressed && !wasLGamepadPressed) || (isRPressed && !wasRGamepadPressed)) {
+        // --- ホールド (通常ゲームパッド / 片手Joy-Con) ---
+        if (leftJoyCon || rightJoyCon) {
+            if (isJoyHoldLPressed && !wasLGamepadPressed) horudoSuru(1);
+            if (isJoyHoldRPressed && !wasRGamepadPressed) horudoSuru(1);
+        } else if ((isLPressed && !wasLGamepadPressed) || (isRPressed && !wasRGamepadPressed)) {
             horudoSuru(1);
         }
     }
@@ -1465,12 +1492,15 @@ function handlePlayerInput() {
         wasBGamepadPressed = isBPressed;
         wasXGamepadPressed = isXPressed;
         wasYGamepadPressed = isYPressed;
-        wasLGamepadPressed = isLPressed; 
-        wasRGamepadPressed = isRPressed; 
+        wasLGamepadPressed = isLPressed || isJoyHoldLPressed; 
+        wasRGamepadPressed = isRPressed || isJoyHoldRPressed; 
         
         if (! (isStarted && countdownTime === 0 && !isPaused) ) {
             wasUpGamepadPressed = (axisY < -0.5 || dpadUp); 
         }
+        wasDownGamepadPressed = dpadDown;
+        wasLeftGamepadPressed = dpadLeft;
+        wasRightGamepadPressed = dpadRight;
     }
     
     if (gameMode === 'TITLE') {
@@ -1678,14 +1708,11 @@ function getNextBlockType(playerIndex) { // 1 or 2 (CPU)
   let bag = (playerIndex === 1) ? p1BurokkuBaggu : p2BurokkuBaggu;
   let nextBag = (playerIndex === 1) ? p1TsugiBurokkuBaggu : p2TsugiBurokkuBaggu;
 
-  // 現在の袋が空になったら、次の7種セットへ切り替える。
-  // 「7個ごとに I/J/L/O/S/T/Z を必ず1回ずつ」を厳密に維持するため、
-  // 次バッグは新しく別順序で作らず、同じ7個の順序を繰り返す。
-  if (!Array.isArray(bag) || bag.length === 0) {
-    bag = (Array.isArray(nextBag) && nextBag.length > 0) ? nextBag : fuyasuBaggu();
-    nextBag = bag.slice();
+  if (bag.length === 0) {
+    bag = nextBag;
+    nextBag = fuyasuBaggu();
   }
-
+  
   if (playerIndex === 1) {
     p1BurokkuBaggu = bag;
     p1TsugiBurokkuBaggu = nextBag;
@@ -1693,8 +1720,8 @@ function getNextBlockType(playerIndex) { // 1 or 2 (CPU)
     p2BurokkuBaggu = bag;
     p2TsugiBurokkuBaggu = nextBag;
   }
-
-  return bag.pop();
+  
+  return bag.pop(); 
 }
 
 // spawnNewBlock を playerIndex (1, 2) に対応
@@ -1745,11 +1772,14 @@ function spawnNewBlock(playerIndex) { // 1: P1, 2: P2/CPU
   }
 }
 
-// 7種1巡バッグ：I/J/L/O/S/T/Zを必ず1回ずつ含む袋を作る。
+// バッグを補充してシャッフルする
 function fuyasuBaggu() {
-  const newBag = [0, 1, 2, 3, 4, 5, 6];
+  let newBag = [];
+  for (let i = 0; i < burokkuShurui.length; i++) {
+    newBag.push(i);
+  }
   shaffuru(newBag);
-  return newBag;
+  return newBag; 
 }
 
 // Fisher-Yates シャッフル関数
@@ -2213,8 +2243,6 @@ function connectOnlineSocket(action) {
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || onlineAlive || {};
       onlinePlayerNames = msg.names || onlinePlayerNames || {};
-      if (msg.roundOver) isRoundOver = true;
-      if (msg.round && Number(msg.round) > 0) onlineRound = Number(msg.round);
       if (joinedCount >= onlinePlayerCount) {
         onlineStatus = '人数がそろいました。ホストのスタートを待っています。';
       } else {
@@ -2412,81 +2440,18 @@ function sendLocalOnlineState(force=false) {
 
 function handleOnlineGuestInput() {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole < 2) return;
-
   const now = millis();
-  const gp = (navigator.getGamepads && navigator.getGamepads()[0]) ? navigator.getGamepads()[0] : null;
-
-  // Nintendo Switch Pro Controller / Joy-Con は Chrome の
-  // Gamepad Standard Mapping に合わせて読み取る。
-  let gpLeft = false, gpRight = false, gpDown = false, gpUp = false;
-  let gpA = false, gpB = false, gpX = false, gpY = false, gpL = false, gpR = false, gpStart = false;
-  if (gp) {
-    gpLeft  = (gp.axes[0] < -0.5) || !!(gp.buttons[14] && gp.buttons[14].pressed);
-    gpRight = (gp.axes[0] > 0.5)  || !!(gp.buttons[15] && gp.buttons[15].pressed);
-    gpUp    = (gp.axes[1] < -0.5) || !!(gp.buttons[12] && gp.buttons[12].pressed);
-    gpDown  = (gp.axes[1] > 0.5)  || !!(gp.buttons[13] && gp.buttons[13].pressed);
-    gpA = !!(gp.buttons[0] && gp.buttons[0].pressed);
-    gpB = !!(gp.buttons[1] && gp.buttons[1].pressed);
-    gpX = !!(gp.buttons[2] && gp.buttons[2].pressed);
-    gpY = !!(gp.buttons[3] && gp.buttons[3].pressed);
-    const joyConHold = getSwitchHoldButtons(gp);
-    gpL = joyConHold.left;
-    gpR = joyConHold.right;
-    gpStart = !!(gp.buttons[9] && gp.buttons[9].pressed);
-  }
-
-  // ラウンド終了・マッチ終了では、Switchコントローラーの
-  // A/B/X/Y/L/R/十字キー/＋のいずれかを押すと次へ進む。
-  if (isRoundOver || isMatchOver) {
-    const anyNow = gpA || gpB || gpX || gpY || gpL || gpR || gpStart || gpUp || gpDown || gpLeft || gpRight;
-    const anyWas = wasAGamepadPressed || wasBGamepadPressed || wasXGamepadPressed || wasYGamepadPressed ||
-                   wasLGamepadPressed || wasRGamepadPressed || wasStartGamepadPressed || wasUpGamepadPressed;
-    if (anyNow && !anyWas) {
-      try { onlineSocket.send(JSON.stringify({type:'action', action:'nextRound'})); } catch (e) {}
-    }
-    wasAGamepadPressed = gpA;
-    wasBGamepadPressed = gpB;
-    wasXGamepadPressed = gpX;
-    wasYGamepadPressed = gpY;
-    wasLGamepadPressed = gpL;
-    wasRGamepadPressed = gpR;
-    wasStartGamepadPressed = gpStart;
-    wasUpGamepadPressed = gpUp;
-    return;
-  }
-
-  // ゲーム中：SwitchコントローラーをP1操作として扱う。
-  // 左スティック/十字キー = 移動、下 = ソフトドロップ。
-  const left  = !!onlineGuestKeyState.left  || keyIsDown(65) || gpLeft;
-  const right = !!onlineGuestKeyState.right || keyIsDown(68) || gpRight;
-  const down  = !!onlineGuestKeyState.down  || keyIsDown(83) || gpDown;
-
-  // A/X = 左回転、B/Y = 右回転、上 = ハードドロップ、L/R = HOLD、＋ = PAUSE
-  if (gpA && !wasAGamepadPressed) sendOnlineAction('rotateLeft');
-  if (gpX && !wasXGamepadPressed) sendOnlineAction('rotateLeft');
-  if (gpB && !wasBGamepadPressed) sendOnlineAction('rotateRight');
-  if (gpY && !wasYGamepadPressed) sendOnlineAction('rotateRight');
-  if (gpUp && !wasUpGamepadPressed) sendOnlineAction('hardDrop');
-  if (gpL && !wasLGamepadPressed) sendOnlineAction('hold');
-  if (gpR && !wasRGamepadPressed) sendOnlineAction('hold');
-  if (gpStart && !wasStartGamepadPressed) sendOnlineAction('pause');
-
-  wasAGamepadPressed = gpA;
-  wasBGamepadPressed = gpB;
-  wasXGamepadPressed = gpX;
-  wasYGamepadPressed = gpY;
-  wasLGamepadPressed = gpL;
-  wasRGamepadPressed = gpR;
-  wasStartGamepadPressed = gpStart;
-  wasUpGamepadPressed = gpUp;
-
   if (now - onlineLastInputSend < 10) return;
   onlineLastInputSend = now;
   if (onlineSocket.bufferedAmount > 64 * 1024) return;
   try {
     onlineSocket.send(JSON.stringify({
       type:'inputState',
-      state: { left, right, down }
+      state: {
+        left:!!onlineGuestKeyState.left || keyIsDown(65),
+        right:!!onlineGuestKeyState.right || keyIsDown(68),
+        down:!!onlineGuestKeyState.down || keyIsDown(83)
+      }
     }));
   } catch (e) {}
 }
@@ -3168,14 +3133,11 @@ function restartGame() {
   sukoa = 0;
   cpuScore = 0;
   
-  // バッグの完全リセット。各プレイヤーごとにランダムな7種順序を1つ作り、
-  // 現在バッグと次バッグへ同じ順序を設定する。
-  const p1Bag = fuyasuBaggu();
-  const p2Bag = fuyasuBaggu();
-  p1BurokkuBaggu = p1Bag.slice();
-  p1TsugiBurokkuBaggu = p1Bag.slice();
-  p2BurokkuBaggu = p2Bag.slice();
-  p2TsugiBurokkuBaggu = p2Bag.slice();
+  // バッグの完全リセット
+  p1BurokkuBaggu = fuyasuBaggu(); 
+  p1TsugiBurokkuBaggu = fuyasuBaggu(); 
+  p2BurokkuBaggu = fuyasuBaggu(); 
+  p2TsugiBurokkuBaggu = fuyasuBaggu();
   
   isStarted = false; 
   isMatchOver = false;
@@ -3222,18 +3184,6 @@ function nextRound() {
  
   isRoundOver = false;
   isPaused = false;
-
-  // オンラインは各ラウンドを新しい7種一巡から開始する。
-  // 各プレイヤーの7個の順序を1つだけ作り、バッグ境界をまたいでも一巡を崩さない。
-  if (gameMode === 'ONLINE') {
-    const p1Bag = fuyasuBaggu();
-    const p2Bag = fuyasuBaggu();
-    p1BurokkuBaggu = p1Bag.slice();
-    p1TsugiBurokkuBaggu = p1Bag.slice();
-    p2BurokkuBaggu = p2Bag.slice();
-    p2TsugiBurokkuBaggu = p2Bag.slice();
-  }
-
   isStarted = true; // ★ ゲーム開始
   countdownTime = millis(); 
  
