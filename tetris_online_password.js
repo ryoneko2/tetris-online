@@ -1650,10 +1650,12 @@ function getNextBlockType(playerIndex) { // 1 or 2 (CPU)
   let bag = (playerIndex === 1) ? p1BurokkuBaggu : p2BurokkuBaggu;
   let nextBag = (playerIndex === 1) ? p1TsugiBurokkuBaggu : p2TsugiBurokkuBaggu;
 
-  // 現在の袋が空になったら、次の「完全な7種袋」に切り替える。
+  // 現在の袋が空になったら、次の7種セットへ切り替える。
+  // 「7個ごとに I/J/L/O/S/T/Z を必ず1回ずつ」を厳密に維持するため、
+  // 次バッグは新しく別順序で作らず、同じ7個の順序を繰り返す。
   if (!Array.isArray(bag) || bag.length === 0) {
     bag = (Array.isArray(nextBag) && nextBag.length > 0) ? nextBag : fuyasuBaggu();
-    nextBag = fuyasuBaggu();
+    nextBag = bag.slice();
   }
 
   if (playerIndex === 1) {
@@ -3075,11 +3077,14 @@ function restartGame() {
   sukoa = 0;
   cpuScore = 0;
   
-  // バッグの完全リセット
-  p1BurokkuBaggu = fuyasuBaggu(); 
-  p1TsugiBurokkuBaggu = fuyasuBaggu(); 
-  p2BurokkuBaggu = fuyasuBaggu(); 
-  p2TsugiBurokkuBaggu = fuyasuBaggu();
+  // バッグの完全リセット。各プレイヤーごとにランダムな7種順序を1つ作り、
+  // 現在バッグと次バッグへ同じ順序を設定する。
+  const p1Bag = fuyasuBaggu();
+  const p2Bag = fuyasuBaggu();
+  p1BurokkuBaggu = p1Bag.slice();
+  p1TsugiBurokkuBaggu = p1Bag.slice();
+  p2BurokkuBaggu = p2Bag.slice();
+  p2TsugiBurokkuBaggu = p2Bag.slice();
   
   isStarted = false; 
   isMatchOver = false;
@@ -3127,12 +3132,15 @@ function nextRound() {
   isRoundOver = false;
   isPaused = false;
 
-  // オンラインは各ラウンドを新しい7種1巡から開始する。
+  // オンラインは各ラウンドを新しい7種一巡から開始する。
+  // 各プレイヤーの7個の順序を1つだけ作り、バッグ境界をまたいでも一巡を崩さない。
   if (gameMode === 'ONLINE') {
-    p1BurokkuBaggu = fuyasuBaggu();
-    p1TsugiBurokkuBaggu = fuyasuBaggu();
-    p2BurokkuBaggu = fuyasuBaggu();
-    p2TsugiBurokkuBaggu = fuyasuBaggu();
+    const p1Bag = fuyasuBaggu();
+    const p2Bag = fuyasuBaggu();
+    p1BurokkuBaggu = p1Bag.slice();
+    p1TsugiBurokkuBaggu = p1Bag.slice();
+    p2BurokkuBaggu = p2Bag.slice();
+    p2TsugiBurokkuBaggu = p2Bag.slice();
   }
 
   isStarted = true; // ★ ゲーム開始
