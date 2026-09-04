@@ -35,7 +35,7 @@ var onlinePlayerNames = {};
 var onlinePlayerName = '';
 var onlineMatchStartRequested = false;
 var onlineJoinedCount = 0;
-const ONLINE_BUILD_VERSION = 'NEXTROUND-FIX-20260904-20';
+const ONLINE_BUILD_VERSION = 'PLAYERNAME-20260904-14';
 var onlineMatchStarted = false;
 var onlineScores = {};
 var onlineAlive = {};
@@ -2250,7 +2250,6 @@ function connectOnlineSocket(action) {
       countdownTime = 0;
       gameMode = 'ONLINE';
       onlineRemoteStates = {};
-      // サーバーからの startRound が唯一の次ラウンド開始トリガー。
       nextRound();
       sendLocalOnlineState(true);
       return;
@@ -2417,10 +2416,19 @@ function handleOnlineHostP2Input() {
 }
 
 function handleOnlineRemoteAction(action) {
-  // オンラインでは次ラウンド開始をサーバーだけが決定する。
-  // クライアントがここで nextRound() を直接呼ぶと、端末ごとに状態がずれて
-  // PAUSED/ラウンド終了状態へ戻ることがあるため、nextRound操作は送信側だけで扱う。
-  if (isRoundOver || isMatchOver) return;
+  if (isRoundOver || isMatchOver) {
+    if (action === 'nextRound' && !onlineRoundRequestSent) {
+      onlineRoundRequestSent = true;
+      if (isMatchOver) {
+        restartGame();
+        gameMode = 'ONLINE';
+        nextRound();
+      } else {
+        nextRound();
+      }
+    }
+    return;
+  }
 
   if (action === 'rotateRight') rotateRight(2);
   else if (action === 'rotateLeft') rotateLeft(2);
@@ -2656,7 +2664,7 @@ function keyPressed() {
       if (keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || keyCode === UP_ARROW || keyCode === DOWN_ARROW ||
           key === 'w' || key === 'W' || key === 'a' || key === 'A' || key === 's' || key === 'S' ||
           key === 'd' || key === 'D' || key === 'c' || key === 'C') {
-        requestOnlineNextRound();
+        sendOnlineAction('nextRound');
       }
       return false;
     }
