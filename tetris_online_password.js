@@ -57,6 +57,7 @@ var onlineStateApplyTimer = null;
 var onlinePrevHardDrop = false;
 var onlinePrevHold = false;
 var onlineRoundRequestSent = false;
+var onlineRound = 0;
 var onlineGuestInitialized = false;
 var onlineInitialStateSent = false;
 var titleButtons = [];
@@ -2177,6 +2178,8 @@ function connectOnlineSocket(action) {
       onlineScores = msg.scores || onlineScores || {};
       onlineAlive = msg.alive || onlineAlive || {};
       onlinePlayerNames = msg.names || onlinePlayerNames || {};
+      if (msg.roundOver) isRoundOver = true;
+      if (msg.round && Number(msg.round) > 0) onlineRound = Number(msg.round);
       if (joinedCount >= onlinePlayerCount) {
         onlineStatus = '人数がそろいました。ホストのスタートを待っています。';
       } else {
