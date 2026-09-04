@@ -1280,8 +1280,8 @@ function drawMatchOverScreen() {
 
     const pad = native[index];
     const id = String(pad.id || '');
-    const isL = /joy.?con.*\(l\)|joy.?con.*left/i.test(id);
-    const isR = /joy.?con.*\(r\)|joy.?con.*right/i.test(id);
+    const isL = /joy.?con.*(?:\(\s*l\s*\)|\bleft\b)/i.test(id);
+    const isR = /joy.?con.*(?:\(\s*r\s*\)|\bright\b)/i.test(id);
     if (!isL && !isR) return native;
 
     const b = Array.from({length:22}, (_,i) => pad.buttons[i] || makeButton(false));
@@ -1319,7 +1319,8 @@ function drawMatchOverScreen() {
 // プレイヤーの入力処理
 function handlePlayerInput() {
     const gamepads = navigator.getGamepads();
-    const gp = gamepads[0]; 
+    // 接続されているゲームパッドを自動検出（Joy-Conが0番以外でも動作）
+    const gp = Array.from(gamepads || []).find(p => p && p.connected) || null; 
    
     // --- 汎用ボタン状態 (コントローラー) ---
     let isAPressed = false;
