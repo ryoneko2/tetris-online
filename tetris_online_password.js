@@ -1275,6 +1275,27 @@ function drawMatchOverScreen() {
 
 
 // プレイヤーの入力処理
+
+// Nintendo Switch Joy-Con (片手持ち) 対応
+// Chrome/Gamepad API では Joy-Con の SL/SR が環境によって
+// buttons[4]/[5] または buttons[6]/[7] として報告される場合があるため、
+// 片手Joy-Conでは両方をHOLDとして扱う。Pro Controllerでは従来どおりL/Rを使用。
+function isSingleJoyConGamepad(gp) {
+  if (!gp) return false;
+  const id = String(gp.id || '').toLowerCase();
+  return id.includes('joy-con') || id.includes('joycon');
+}
+
+function getSwitchHoldButtons(gp) {
+  if (!gp) return { left:false, right:false };
+  const pressed = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  const singleJoyCon = isSingleJoyConGamepad(gp);
+  return {
+    left: pressed(4) || (singleJoyCon && pressed(6)),
+    right: pressed(5) || (singleJoyCon && pressed(7))
+  };
+}
+
 function handlePlayerInput() {
     const gamepads = navigator.getGamepads();
     const gp = gamepads[0]; 
@@ -1300,8 +1321,9 @@ function handlePlayerInput() {
         isBPressed = gp.buttons[1].pressed;
         isXPressed = gp.buttons[2].pressed; 
         isYPressed = gp.buttons[3].pressed; 
-        isLPressed = gp.buttons[4].pressed;
-        isRPressed = gp.buttons[5].pressed;
+        const joyConHold = getSwitchHoldButtons(gp);
+        isLPressed = joyConHold.left;
+        isRPressed = joyConHold.right;
         isStartPressed = gp.buttons[9].pressed;
         
         axisX = gp.axes[0]; 
@@ -2390,18 +2412,81 @@ function sendLocalOnlineState(force=false) {
 
 function handleOnlineGuestInput() {
   if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN || onlineRole < 2) return;
+
   const now = millis();
+  const gp = (navigator.getGamepads && navigator.getGamepads()[0]) ? navigator.getGamepads()[0] : null;
+
+  // Nintendo Switch Pro Controller / Joy-Con は Chrome の
+  // Gamepad Standard Mapping に合わせて読み取る。
+  let gpLeft = false, gpRight = false, gpDown = false, gpUp = false;
+  let gpA = false, gpB = false, gpX = false, gpY = false, gpL = false, gpR = false, gpStart = false;
+  if (gp) {
+    gpLeft  = (gp.axes[0] < -0.5) || !!(gp.buttons[14] && gp.buttons[14].pressed);
+    gpRight = (gp.axes[0] > 0.5)  || !!(gp.buttons[15] && gp.buttons[15].pressed);
+    gpUp    = (gp.axes[1] < -0.5) || !!(gp.buttons[12] && gp.buttons[12].pressed);
+    gpDown  = (gp.axes[1] > 0.5)  || !!(gp.buttons[13] && gp.buttons[13].pressed);
+    gpA = !!(gp.buttons[0] && gp.buttons[0].pressed);
+    gpB = !!(gp.buttons[1] && gp.buttons[1].pressed);
+    gpX = !!(gp.buttons[2] && gp.buttons[2].pressed);
+    gpY = !!(gp.buttons[3] && gp.buttons[3].pressed);
+    const joyConHold = getSwitchHoldButtons(gp);
+    gpL = joyConHold.left;
+    gpR = joyConHold.right;
+    gpStart = !!(gp.buttons[9] && gp.buttons[9].pressed);
+  }
+
+  // ラウンド終了・マッチ終了では、Switchコントローラーの
+  // A/B/X/Y/L/R/十字キー/＋のいずれかを押すと次へ進む。
+  if (isRoundOver || isMatchOver) {
+    const anyNow = gpA || gpB || gpX || gpY || gpL || gpR || gpStart || gpUp || gpDown || gpLeft || gpRight;
+    const anyWas = wasAGamepadPressed || wasBGamepadPressed || wasXGamepadPressed || wasYGamepadPressed ||
+                   wasLGamepadPressed || wasRGamepadPressed || wasStartGamepadPressed || wasUpGamepadPressed;
+    if (anyNow && !anyWas) {
+      try { onlineSocket.send(JSON.stringify({type:'action', action:'nextRound'})); } catch (e) {}
+    }
+    wasAGamepadPressed = gpA;
+    wasBGamepadPressed = gpB;
+    wasXGamepadPressed = gpX;
+    wasYGamepadPressed = gpY;
+    wasLGamepadPressed = gpL;
+    wasRGamepadPressed = gpR;
+    wasStartGamepadPressed = gpStart;
+    wasUpGamepadPressed = gpUp;
+    return;
+  }
+
+  // ゲーム中：SwitchコントローラーをP1操作として扱う。
+  // 左スティック/十字キー = 移動、下 = ソフトドロップ。
+  const left  = !!onlineGuestKeyState.left  || keyIsDown(65) || gpLeft;
+  const right = !!onlineGuestKeyState.right || keyIsDown(68) || gpRight;
+  const down  = !!onlineGuestKeyState.down  || keyIsDown(83) || gpDown;
+
+  // A/X = 左回転、B/Y = 右回転、上 = ハードドロップ、L/R = HOLD、＋ = PAUSE
+  if (gpA && !wasAGamepadPressed) sendOnlineAction('rotateLeft');
+  if (gpX && !wasXGamepadPressed) sendOnlineAction('rotateLeft');
+  if (gpB && !wasBGamepadPressed) sendOnlineAction('rotateRight');
+  if (gpY && !wasYGamepadPressed) sendOnlineAction('rotateRight');
+  if (gpUp && !wasUpGamepadPressed) sendOnlineAction('hardDrop');
+  if (gpL && !wasLGamepadPressed) sendOnlineAction('hold');
+  if (gpR && !wasRGamepadPressed) sendOnlineAction('hold');
+  if (gpStart && !wasStartGamepadPressed) sendOnlineAction('pause');
+
+  wasAGamepadPressed = gpA;
+  wasBGamepadPressed = gpB;
+  wasXGamepadPressed = gpX;
+  wasYGamepadPressed = gpY;
+  wasLGamepadPressed = gpL;
+  wasRGamepadPressed = gpR;
+  wasStartGamepadPressed = gpStart;
+  wasUpGamepadPressed = gpUp;
+
   if (now - onlineLastInputSend < 10) return;
   onlineLastInputSend = now;
   if (onlineSocket.bufferedAmount > 64 * 1024) return;
   try {
     onlineSocket.send(JSON.stringify({
       type:'inputState',
-      state: {
-        left:!!onlineGuestKeyState.left || keyIsDown(65),
-        right:!!onlineGuestKeyState.right || keyIsDown(68),
-        down:!!onlineGuestKeyState.down || keyIsDown(83)
-      }
+      state: { left, right, down }
     }));
   } catch (e) {}
 }
