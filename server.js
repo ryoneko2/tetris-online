@@ -16,44 +16,7 @@ function snapshot(room){
   return {scores,alive,names};
 }
 function roomStatus(room){
-  const st=snapshot(room); return {type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:!!room.started,round:room.round||0,roundOver:!!room.roundOver,scores:st.scores,alive:st.alive,names:st.names};
-}
-function alivePlayers(room){ return room.players.filter(p=>p && p.alive !== false); }
-function finishRoundIfNeeded(room){
-  if(!room.started || room.roundOver || room.ended) return false;
-  const alive=alivePlayers(room);
-  if(alive.length > 1) return false;
-  room.roundOver=true;
-  const winner=alive.length===1 ? alive[0] : null;
-  if(winner) winner.wins++;
-  const st=snapshot(room);
-  const matchWinner=winner && winner.wins>=2 ? winner.role : 0;
-  if(matchWinner){
-    const result={type:'matchOver',winner:matchWinner,scores:st.scores,alive:st.alive,names:st.names};
-    for(const p of room.players) send(p.ws,result);
-    room.ended=true;
-    rooms.delete(room.password);
-    for(const p of room.players){ p.ws.room=null; p.ws.role=0; }
-    console.log(`マッチ終了・部屋解散: ${room.password} winner=PLAYER ${matchWinner}`);
-  } else {
-    broadcast(room,{type:'roundOver',winner:winner?winner.role:0,matchOver:false,matchWinner:0,scores:st.scores,alive:st.alive,names:st.names});
-    console.log(`ラウンド終了: ${room.password} alive=${alive.length} winner=${winner?winner.role:0}`);
-    // 3秒後にサーバー主導で次ラウンドを開始する。
-    setTimeout(()=>startNextRound(room),3000);
-  }
-  return true;
-}
-function startNextRound(room){
-  if(!room || room.ended || !room.started || !room.roundOver) return;
-  if(rooms.get(room.password)!==room) return;
-  // 切断などで2人未満になった場合は開始しない。
-  if(room.players.length < 2) return;
-  room.roundOver=false;
-  room.round=(room.round||1)+1;
-  for(const p of room.players) p.alive=true;
-  const st=snapshot(room);
-  for(const p of room.players) send(p.ws,{type:'startRound',round:room.round,started:true,...st});
-  console.log(`次ラウンド開始: ${room.password} round=${room.round}`);
+  const st=snapshot(room); return {type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:!!room.started,scores:st.scores,alive:st.alive,names:st.names};
 }
 function makePassword(){ let p; do p=String(Math.floor(100000+Math.random()*900000)); while(rooms.has(p)); return p; }
 function cleanName(name,fallback){
@@ -93,7 +56,7 @@ wss.on('connection',ws=>{
       const room={password,playerCount:n,players:[],started:false,roundOver:false,round:0};
       rooms.set(password,room);
       const player={ws,role:1,wins:0,alive:true,name:cleanName(msg.name, 'PLAYER 1')}; room.players.push(player); ws.room=room; ws.role=1;
-      send(ws,{type:'roomJoined',role:1,room:password,password,playerCount:n,round:0,...snapshot(room)});
+      send(ws,{type:'roomJoined',role:1,room:password,password,playerCount:n,...snapshot(room)});
       send(ws,roomStatus(room));
       console.log(`ルーム作成: ${password} (${n}人)`);
       return;
@@ -107,7 +70,7 @@ wss.on('connection',ws=>{
       const used=new Set(room.players.map(p=>p.role)); let role=0; for(let r=1;r<=room.playerCount;r++) if(!used.has(r)){role=r;break;}
       if(!role) return send(ws,{type:'error',message:'この部屋は満員です。'});
       const player={ws,role,wins:0,alive:true,name:cleanName(msg.name, `PLAYER ${role}`)}; room.players.push(player); ws.room=room; ws.role=role;
-      send(ws,{type:'roomJoined',role,room:password,password,playerCount:room.playerCount,round:room.round||0,...snapshot(room)});
+      send(ws,{type:'roomJoined',role,room:password,password,playerCount:room.playerCount,...snapshot(room)});
       broadcast(room,roomStatus(room));
       console.log(`ルーム参加: ${password} PLAYER ${role} (${room.players.length}/${room.playerCount})`);
       // 人数がそろっても自動開始しない。ホストのSTART操作を待つ。
@@ -120,12 +83,6 @@ wss.on('connection',ws=>{
     if(msg.type==='playerState'){
       if(msg.player!==me.role) return;
       const state=msg.state; if(!state||typeof state!=='object') return;
-      // クライアント側のゲームオーバー通知だけに依存せず、
-      // サーバーが各プレイヤーの alive 状態を直接管理する。
-      if(typeof state.alive==='boolean'){
-        me.alive=state.alive;
-        finishRoundIfNeeded(room);
-      }
       broadcast(room,{type:'playerState',player:me.role,state},ws); return;
     }
 
@@ -150,14 +107,38 @@ wss.on('connection',ws=>{
         return;
       }
       if(msg.action==='playerDead'){
-        me.alive=false;
-        broadcast(room,{type:'playerDead',player:me.role});
-        finishRoundIfNeeded(room);
+        me.alive=false; broadcast(room,{type:'playerDead',player:me.role});
+        const alive=room.players.filter(p=>p.alive);
+        if(alive.length<=1&&!room.roundOver){
+          room.roundOver=true;
+          const winner=alive.length===1?alive[0]:0;
+          if(winner) winner.wins++;
+          const matchWinner=winner&&winner.wins>=2?winner.role:0;
+          const st=snapshot(room);
+          if(matchWinner){
+            // 2勝した時点でマッチ終了。結果を全員へ通知してから部屋を解散する。
+            const result={type:'matchOver',winner:matchWinner,scores:st.scores,alive:st.alive,names:st.names};
+            for(const p of room.players) send(p.ws,result);
+            room.ended=true;
+            rooms.delete(room.password);
+            for(const p of room.players){ p.ws.room=null; p.ws.role=0; }
+            console.log(`マッチ終了・部屋解散: ${room.password} winner=PLAYER ${matchWinner}`);
+          } else {
+            broadcast(room,{type:'roundOver',winner,matchOver:false,matchWinner:0,scores:st.scores,alive:st.alive,names:st.names});
+          }
+        }
         return;
       }
       if(msg.action==='nextRound'){
-        // 旧クライアントとの互換用。現在はサーバーが3秒後に自動開始する。
-        if(room.roundOver && !room.ended) startNextRound(room);
+        // ラウンド終了中だけ受理。クライアントの再送・同時押しは安全に無視する。
+        if(!room.roundOver || room.ended) return;
+        room.roundOver=false;
+        for(const p of room.players)p.alive=true;
+        const st=snapshot(room);
+        // 次ラウンド開始通知は、押した本人を含む全員へ送る。
+        room.round=(room.round||1)+1;
+        for(const p of room.players) send(p.ws,{type:'startRound',round:room.round,started:true,...st});
+        console.log(`次ラウンド開始: ${room.password}`);
         return;
       }
       return;
