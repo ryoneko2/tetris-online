@@ -627,9 +627,9 @@ function draw() {
     // P1: 自然落下
     else if (!isLanded && frameCount % framesPerDrop === 0) {
         let isSoftDropping = false;
-        const padState = getTetrisGamepadState();
-        if (padState) {
-             isSoftDropping = isSoftDropping || (Number(padState.axisY || 0) > 0.5 || !!padState.dpadDown);
+        const gp = navigator.getGamepads()[0];
+        if (gp) {
+             isSoftDropping = isSoftDropping || (gp.axes[1] > 0.5 || gp.buttons[13].pressed);
         }
         if (!isSoftDropping) {
              moveDown(1);
@@ -1271,8 +1271,8 @@ function getTetrisGamepadState(){
     .filter(p => p && p.connected);
   if (!native.length) return null;
 
-  const joyL = native.find(p => /joy.?con.*(?:\(\s*l\s*\)|\bleft\b)/i.test(String(p.id||'')));
-  const joyR = native.find(p => /joy.?con.*(?:\(\s*r\s*\)|\bright\b)/i.test(String(p.id||'')));
+  const joyL = native.find(p => /joy.?con/i.test(String(p.id||'')) && /(?:\(\s*l\s*\)|\bleft\b)/i.test(String(p.id||'')));
+  const joyR = native.find(p => /joy.?con/i.test(String(p.id||'')) && /(?:\(\s*r\s*\)|\bright\b)/i.test(String(p.id||'')));
   const standard = p => String(p.mapping||'') === 'standard';
   const make = pressed => ({pressed:!!pressed,touched:!!pressed,value:pressed?1:0});
   const rawPressed = (p, i) => !!(p && p.buttons && p.buttons[i] && p.buttons[i].pressed);
@@ -1318,15 +1318,20 @@ function getTetrisGamepadState(){
     axisX:0,axisY:0,dpadUp:false,dpadDown:false,dpadLeft:false,dpadRight:false};
 
   for (const p of pads){
-    state.a ||= rawPressed(p,0); state.b ||= rawPressed(p,1);
-    state.x ||= rawPressed(p,2); state.y ||= rawPressed(p,3);
-    state.l ||= rawPressed(p,4); state.r ||= rawPressed(p,5);
-    state.start ||= rawPressed(p,9);
-    state.stickClick ||= rawPressed(p,10);
+    // normalizeJoyCon() で作った標準配列を必ずここで読む。
+    // 以前は元のJoy-Con配列(p.buttons)を直接読んでいたため、
+    // ChromeOS/Chromiumで未マッピングのJoy-Conではボタン入力だけが全て無視されていた。
+    const b = p.buttons || [];
+    const pressed = i => !!(b[i] && b[i].pressed);
+    state.a ||= pressed(0); state.b ||= pressed(1);
+    state.x ||= pressed(2); state.y ||= pressed(3);
+    state.l ||= pressed(4); state.r ||= pressed(5);
+    state.start ||= pressed(9);
+    state.stickClick ||= pressed(10);
     state.axisX = Math.abs(Number(p.axes?.[0]||0)) > Math.abs(state.axisX) ? Number(p.axes?.[0]||0) : state.axisX;
     state.axisY = Math.abs(Number(p.axes?.[1]||0)) > Math.abs(state.axisY) ? Number(p.axes?.[1]||0) : state.axisY;
-    state.dpadUp ||= rawPressed(p,12); state.dpadDown ||= rawPressed(p,13);
-    state.dpadLeft ||= rawPressed(p,14); state.dpadRight ||= rawPressed(p,15);
+    state.dpadUp ||= pressed(12); state.dpadDown ||= pressed(13);
+    state.dpadLeft ||= pressed(14); state.dpadRight ||= pressed(15);
   }
   return state;
 }
@@ -1444,16 +1449,10 @@ function handlePlayerInput() {
             lastMoveDownTime = 0;
         }
        
-        // --- Joy-Con種別を先に確定 ---
-        // ※ここをハードドロップ判定より後に宣言するとTDZでReferenceErrorになり、
-        //   handlePlayerInput()全体が途中終了してコントローラー操作が一切効かなくなる。
-        const isJoyL = !!gp?.isJoyL;
-        const isJoyR = !!gp?.isJoyR;
-        const isJoyCon = isJoyL || isJoyR;
-
         // --- ハードドロップ ---
         // Joy-Conはスティック上、通常のゲームパッドは十字上でも可。
         // スティッククリックも予備操作としてハードドロップに使用する。
+        const isJoyCon = isJoyL || isJoyR;
         const isUpPressed = (axisY < -0.35) || (!isJoyCon && dpadUp) || !!gp?.stickClick;
         if (isUpPressed && !wasUpGamepadPressed) {
             hardDrop(1);
@@ -1461,6 +1460,8 @@ function handlePlayerInput() {
         }
         wasUpGamepadPressed = isUpPressed;
         // --- 回転 (コントローラー / Joy-Con) ---
+        const isJoyL = !!gp?.isJoyL;
+        const isJoyR = !!gp?.isJoyR;
         if (isJoyL) {
             // Joy-Con(L): 十字4方向をすべて回転に使用。
             if (isAPressed && !wasAGamepadPressed) rotateLeft(1);   // 左
