@@ -795,32 +795,83 @@ function dinoDrawGround() {
 function dinoDrawDinosaur() {
   const ducking=dinoDucking && dinoPlayerY>=dinoGroundY-dinoPlayerH-2;
   const dx=DINO_PLAYER_X, baseY=dinoPlayerY;
-  const body=dinoNight?235:55, bg=dinoNight?20:247;
-  noStroke(); fill(body);
+  const ink=dinoNight?235:55, bg=dinoNight?20:247;
+  noStroke(); fill(ink);
+
+  // Chrome Dinoを意識した、シンプルなピクセルシルエット。
   if(ducking) {
-    rect(dx+7,baseY+21,48,20,3); rect(dx+42,baseY+11,28,20,3);
-    rect(dx+1,baseY+27,14,8,2); rect(dx+17,baseY+40,9,8,1); rect(dx+45,baseY+40,9,8,1);
-    fill(bg); rect(dx+61,baseY+16,4,4,1); return;
+    // 頭を前に出した低い姿勢
+    rect(dx+8,baseY+20,43,21);
+    rect(dx+39,baseY+10,27,25);
+    rect(dx+60,baseY+15,10,12);
+    rect(dx+2,baseY+27,13,8);
+    rect(dx+19,baseY+39,9,9);
+    rect(dx+46,baseY+39,9,9);
+    fill(bg); rect(dx+60,baseY+16,4,4);
+    return;
   }
-  // 頭・胴体・尻尾・脚を簡潔なドット風形状で描く。
-  rect(dx+13,baseY+13,29,31,3); rect(dx+29,baseY+3,20,23,3);
-  rect(dx+5,baseY+22,12,9,2); rect(dx+1,baseY+26,10,5,1);
-  fill(bg); rect(dx+42,baseY+8,4,4,1);
-  const legPhase=Math.floor(dinoRunFrame/7)%2; fill(body);
-  if(legPhase===0){rect(dx+10,baseY+44,7,8,1);rect(dx+34,baseY+42,7,10,1);}
-  else{rect(dx+12,baseY+42,7,10,1);rect(dx+31,baseY+44,7,8,1);}
+
+  // 尻尾 → 胴体 → 首 → 頭の順で、原作風の輪郭を作る。
+  rect(dx+1,baseY+27,17,6);
+  rect(dx+7,baseY+23,17,8);
+  rect(dx+17,baseY+18,25,28);
+  rect(dx+34,baseY+10,12,23);
+  rect(dx+40,baseY+4,24,24);
+  rect(dx+57,baseY+9,12,17);
+  rect(dx+64,baseY+15,8,8);
+
+  // 背中と首の段差をピクセル風に整える
+  rect(dx+28,baseY+14,13,8);
+  rect(dx+46,baseY+1,9,8);
+
+  // 口元の切れ込み・目
+  fill(bg);
+  rect(dx+62,baseY+18,4,3);
+  rect(dx+55,baseY+9,4,4);
+
+  // 腕
+  fill(ink);
+  rect(dx+39,baseY+28,10,5);
+  rect(dx+46,baseY+31,6,4);
+
+  // 走行アニメーション：左右の脚を交互に前後へ
+  const legPhase=Math.floor(dinoRunFrame/7)%2;
+  if(legPhase===0){
+    rect(dx+18,baseY+43,8,9); rect(dx+38,baseY+43,8,7);
+    rect(dx+13,baseY+50,13,3); rect(dx+38,baseY+50,13,3);
+  } else {
+    rect(dx+20,baseY+43,8,7); rect(dx+40,baseY+43,8,9);
+    rect(dx+13,baseY+50,13,3); rect(dx+42,baseY+50,13,3);
+  }
 }
 
 function dinoDrawCactus(o) {
-  const c=dinoNight?235:55; fill(c); noStroke();
+  const ink=dinoNight?235:55;
+  noStroke(); fill(ink);
   const x=o.x,y=o.y,w=o.w,h=o.h;
+
+  // 原作のサボテンらしい、細い幹＋左右の腕をピクセル形状で再現。
   if(o.variant===0){
-    rect(x+w*.35,y,w*.32,h,1); rect(x+w*.08,y+h*.46,w*.28,8,1); rect(x+w*.08,y+h*.34,7,h*.24,1);
+    const stem=Math.max(8,Math.round(w*0.32));
+    const sx=x+Math.round((w-stem)/2);
+    rect(sx,y,stem,h);
+    rect(x+Math.round(w*.08),y+h*.43,Math.max(7,Math.round(w*.25)),7);
+    rect(x+Math.round(w*.08),y+h*.28,7,Math.round(h*.20));
   } else if(o.variant===1){
-    rect(x+8,y,12,h,1); rect(x+29,y+7,12,h-7,1); rect(x,y+h*.42,11,8,1); rect(x,y+h*.28,7,h*.2,1); rect(x+41,y+h*.34,10,8,1); rect(x+46,y+h*.18,7,h*.2,1);
+    rect(x+8,y,12,h);
+    rect(x+29,y+7,12,h-7);
+    rect(x,y+h*.42,11,8);
+    rect(x,y+h*.27,7,h*.20);
+    rect(x+41,y+h*.35,10,8);
+    rect(x+46,y+h*.18,7,h*.21);
   } else {
-    rect(x+6,y,11,h,1); rect(x+23,y+3,11,h-3,1); rect(x+40,y+8,11,h-8,1);
-    rect(x,y+h*.48,10,8,1); rect(x,y+h*.34,7,h*.2,1); rect(x+51,y+h*.43,10,8,1); rect(x+55,y+h*.28,7,h*.2,1);
+    rect(x+6,y,11,h);
+    rect(x+23,y+3,11,h-3);
+    rect(x+40,y+8,11,h-8);
+    rect(x,y+h*.47,10,8);
+    rect(x,y+h*.33,7,h*.20);
+    rect(x+51,y+h*.43,10,8);
+    rect(x+55,y+h*.28,7,h*.20);
   }
 }
 
@@ -857,7 +908,7 @@ function drawDinoGame() {
   dinoDrawDinosaur();
 
   fill(ink); textAlign(RIGHT,TOP); textSize(22);
-  text('HI '+String(dinoBestScore).padStart(5,'0')+'  '+String(Math.floor(dinoScore)).padStart(5,'0'),width-30,25);
+  text('HI '+String(dinoBestScore).padStart(5,'0')+'  '+String(Math.floor(dinoScore)).padStart(5,'0'),width-30,42);
 
   // 100点到達時に短いフラッシュ。ゲーム速度・スコアの手応えを出す。
   if(dinoFlashUntil>millis()){ fill(dinoNight?247:20,90); rect(0,0,width,height); }
