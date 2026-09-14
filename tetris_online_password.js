@@ -908,7 +908,7 @@ function drawDinoGame() {
   dinoDrawDinosaur();
 
   fill(ink); textAlign(RIGHT,TOP); textSize(22);
-  text('HI '+String(dinoBestScore).padStart(5,'0')+'  '+String(Math.floor(dinoScore)).padStart(5,'0'),width-30,42);
+  text('HI '+String(dinoBestScore).padStart(5,'0')+'  '+String(Math.floor(dinoScore)).padStart(5,'0'),width-30,700);
 
   // 100点到達時に短いフラッシュ。ゲーム速度・スコアの手応えを出す。
   if(dinoFlashUntil>millis()){ fill(dinoNight?247:20,90); rect(0,0,width,height); }
