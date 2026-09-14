@@ -564,201 +564,311 @@ function drawOnlineCountdown(y,h){
 
 // ============================================================
 // 恐竜ゲーム（DINO RUN）
-// セレクト画面から遊べるシンプルなランゲーム。
-// スペース / ↑ / W / Aボタン / 画面タップでジャンプ。
-// P / ESCでセレクト画面へ戻る。
+// Chrome のオフライン恐竜ゲームを参考に、ゲーム性を原作寄りに調整。
+// ※公式の画像・音声・コードは使用せず、描画はこのゲーム独自実装。
 // ============================================================
+var dinoNight = false;
+var dinoDucking = false;
+var dinoDuckHeight = 30;
+var dinoRunFrame = 0;
+var dinoGroundOffset = 0;
+var dinoObstacles = [];
+var dinoNextSpawnDistance = 0;
+var dinoCloudOffset = 0;
+var dinoLastScoreTick = 0;
+var dinoLastTime = 0;
+var dinoSoundReady = false;
+var dinoAudio = null;
+var dinoFlashUntil = 0;
+var dinoMilestone = 0;
+
+// 原作寄りの基本値：低速スタート→徐々に加速、一定距離ごとに障害物を生成。
+const DINO_INITIAL_SPEED = 6;
+const DINO_MAX_SPEED = 13;
+const DINO_GRAVITY = 0.6;
+const DINO_JUMP_VELOCITY = -10.5;
+const DINO_GROUND_Y = 650;
+const DINO_PLAYER_X = 126;
+const DINO_SCORE_INTERVAL = 100;
+const DINO_DAY_LENGTH = 700;
+
 function startDinoGame() {
   gameMode = 'DINO';
+  dinoGroundY = DINO_GROUND_Y;
+  dinoPlayerW = 44;
+  dinoPlayerH = 48;
   dinoPlayerY = dinoGroundY - dinoPlayerH;
   dinoVelocityY = 0;
-  dinoObstacleX = width + 80;
-  dinoObstacleW = random(24, 38);
-  dinoObstacleH = random(44, 72);
-  dinoSpeed = 9.5;
+  dinoSpeed = DINO_INITIAL_SPEED;
   dinoScore = 0;
   dinoGameOver = false;
+  dinoDucking = false;
   dinoJumpCooldown = 0;
+  dinoRunFrame = 0;
+  dinoGroundOffset = 0;
+  dinoNight = false;
   dinoPrevGamepadJump = false;
   dinoPrevGamepadDown = false;
   dinoLastTime = millis();
+  dinoLastScoreTick = millis();
+  dinoFlashUntil = 0;
+  dinoMilestone = 0;
+  dinoCloudOffset = 0;
+  dinoObstacles = [];
+  dinoNextSpawnDistance = 420;
   dinoClouds = [
-    { x: 180, y: 135, s: 1.0 },
-    { x: 560, y: 95, s: 0.75 },
-    { x: 900, y: 165, s: 1.15 }
+    {x:150,y:125,s:0.90},{x:510,y:95,s:0.72},
+    {x:820,y:150,s:1.05},{x:1160,y:105,s:0.80}
   ];
+}
+
+function dinoSpawnObstacle(first) {
+  const score = Math.floor(dinoScore);
+  const difficulty = Math.min(1, score / 5000);
+  const canBird = score >= 450;
+
+  // 画面右端から十分な余裕を取る。最初の障害物は少し遅れて登場。
+  let x = first ? width + 360 : width + 20;
+  let type = 'CACTUS';
+
+  if (canBird && random() < Math.min(0.20, 0.06 + difficulty * 0.14)) type = 'BIRD';
+
+  if (type === 'BIRD') {
+    // 低・中・高の3高度。低空はしゃがみ、高空はジャンプを要求する。
+    const levels = [dinoGroundY - 112, dinoGroundY - 82, dinoGroundY - 55];
+    const y = levels[Math.floor(random(levels.length))];
+    dinoObstacles.push({type:'BIRD',x,y,w:46,h:28,frame:0});
+  } else {
+    // 原作の「単体/複数サボテン」に近い構成。
+    const groupRoll = random();
+    let count = groupRoll < 0.24 ? 2 : (groupRoll < 0.10 ? 3 : 1);
+    if (score < 250) count = 1;
+    count = Math.min(count, 3);
+    let cursor = x;
+    for (let i=0;i<count;i++) {
+      const variant = Math.floor(random(3));
+      let w=20,h=44;
+      if (variant===1) {w=42;h=48;}
+      if (variant===2) {w=58;h=52;}
+      dinoObstacles.push({type:'CACTUS',x:cursor,y:dinoGroundY-h,w,h,variant});
+      cursor += w + (i<count-1 ? random(8,15) : 0);
+    }
+  }
+
+  // 次の障害物までの最低距離。速度が上がっても理不尽な連続配置を避ける。
+  const minGap = 300 - difficulty * 55;
+  const maxGap = 500 - difficulty * 40;
+  dinoNextSpawnDistance = random(minGap,maxGap);
 }
 
 function handleDinoInput() {
   const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
   const gp = gamepads && gamepads[0];
-  let gamepadJump = false;
-  let gamepadDown = false;
+  let gamepadJump=false, gamepadDown=false;
   if (gp) {
-    gamepadJump = !!(
-      (gp.buttons[0] && gp.buttons[0].pressed) ||
-      (gp.buttons[12] && gp.buttons[12].pressed) ||
-      (gp.axes[1] !== undefined && gp.axes[1] < -0.5)
-    );
-    gamepadDown = !!(
-      (gp.buttons[13] && gp.buttons[13].pressed) ||
-      (gp.axes[1] !== undefined && gp.axes[1] > 0.5)
-    );
+    gamepadJump = !!((gp.buttons[0]&&gp.buttons[0].pressed) ||
+      (gp.buttons[12]&&gp.buttons[12].pressed) ||
+      (gp.axes[1]!==undefined&&gp.axes[1]<-0.5));
+    gamepadDown = !!((gp.buttons[13]&&gp.buttons[13].pressed) ||
+      (gp.axes[1]!==undefined&&gp.axes[1]>0.5));
   }
-  const jumpPressed = gamepadJump && !dinoPrevGamepadJump;
-  const downPressed = gamepadDown && !dinoPrevGamepadDown;
-  dinoPrevGamepadJump = gamepadJump;
-  dinoPrevGamepadDown = gamepadDown;
+  const jumpPressed=gamepadJump&&!dinoPrevGamepadJump;
+  dinoPrevGamepadJump=gamepadJump;
+  dinoPrevGamepadDown=gamepadDown;
   if (jumpPressed) dinoJump();
-  if (downPressed || gamepadDown) dinoDive();
+  dinoDucking = gamepadDown || keyIsDown(DOWN_ARROW) || keyIsDown(83);
+  if (dinoDucking) dinoDive();
 }
 
 function dinoJump() {
-  if (dinoGameOver) {
-    startDinoGame();
-    return;
-  }
-  const onGround = dinoPlayerY >= dinoGroundY - dinoPlayerH - 1;
-  if (onGround && dinoJumpCooldown <= 0) {
-    dinoVelocityY = -17.5;
-    dinoJumpCooldown = 7;
+  if (dinoGameOver) { startDinoGame(); return; }
+  const floorY=dinoGroundY-dinoPlayerH;
+  const onGround=dinoPlayerY>=floorY-1;
+  if (onGround && dinoJumpCooldown<=0) {
+    dinoVelocityY=DINO_JUMP_VELOCITY;
+    dinoJumpCooldown=8;
+    dinoDinoSound('jump');
   }
 }
 
 function dinoDive() {
   if (dinoGameOver) return;
-  const floorY = dinoGroundY - dinoPlayerH;
-  const airborne = dinoPlayerY < floorY - 1;
-  if (airborne && dinoVelocityY < 23) {
-    dinoVelocityY = 23;
-  }
+  const floorY=dinoGroundY-dinoPlayerH;
+  if (dinoPlayerY<floorY-1 && dinoVelocityY<12) dinoVelocityY=12;
+}
+
+function dinoDinoSound(kind) {
+  try {
+    if (!dinoAudio) dinoAudio=new (window.AudioContext||window.webkitAudioContext)();
+    if (dinoAudio.state==='suspended') dinoAudio.resume();
+    const osc=dinoAudio.createOscillator(), gain=dinoAudio.createGain();
+    osc.type='square'; osc.frequency.value=kind==='jump'?430:95;
+    gain.gain.value=0.012; osc.connect(gain); gain.connect(dinoAudio.destination);
+    osc.start(); osc.stop(dinoAudio.currentTime+(kind==='jump'?0.035:0.09));
+  } catch(e) {}
 }
 
 function updateDinoGame() {
   if (dinoGameOver) return;
+  const now=millis();
+  let dt=(now-dinoLastTime)/16.6667;
+  if (!Number.isFinite(dt)||dt<=0) dt=1;
+  dt=Math.min(dt,2.2);
+  dinoLastTime=now;
+  dinoJumpCooldown=Math.max(0,dinoJumpCooldown-dt);
 
-  const now = millis();
-  let dt = (now - dinoLastTime) / 16.6667;
-  if (!Number.isFinite(dt) || dt <= 0) dt = 1;
-  dt = Math.min(dt, 2.5);
-  dinoLastTime = now;
+  // 原作の感覚に近い、一定重力と速度ベースのジャンプ。
+  dinoVelocityY += DINO_GRAVITY*dt;
+  dinoPlayerY += dinoVelocityY*dt;
+  const floorY=dinoGroundY-dinoPlayerH;
+  if (dinoPlayerY>=floorY) { dinoPlayerY=floorY; dinoVelocityY=0; }
 
-  dinoJumpCooldown = Math.max(0, dinoJumpCooldown - dt);
-  dinoVelocityY += 1.0 * dt;
-  dinoPlayerY += dinoVelocityY * dt;
+  // スコアが増えるほど速度上昇。最大速度を設定。
+  dinoSpeed=Math.min(DINO_MAX_SPEED,DINO_INITIAL_SPEED+dinoScore*0.0019);
+  dinoGroundOffset=(dinoGroundOffset+dinoSpeed*dt)%80;
+  dinoRunFrame+=dinoSpeed*dt;
 
-  const floorY = dinoGroundY - dinoPlayerH;
-  if (dinoPlayerY >= floorY) {
-    dinoPlayerY = floorY;
-    dinoVelocityY = 0;
-  }
-
-  dinoObstacleX -= dinoSpeed * dt;
-  if (dinoObstacleX < -dinoObstacleW - 20) {
-    const difficulty = Math.min(1, dinoScore / 900);
-    const gapMin = Math.max(95, 180 - difficulty * 70);
-    const gapMax = Math.max(180, 360 - difficulty * 110);
-    dinoObstacleX = width + random(gapMin, gapMax);
-    dinoObstacleW = random(24 + difficulty * 4, 38 + difficulty * 8);
-    dinoObstacleH = random(44 + difficulty * 6, 72 + difficulty * 12);
-  }
-
+  // 雲はゆっくり、地面は速く動く。
   for (const cloud of dinoClouds) {
-    cloud.x -= 0.45 * cloud.s * dt;
-    if (cloud.x < -120) {
-      cloud.x = width + random(80, 300);
-      cloud.y = random(80, 180);
-      cloud.s = random(0.7, 1.2);
+    cloud.x-=dinoSpeed*0.16*cloud.s*dt;
+    if (cloud.x<-130) { cloud.x=width+random(80,300); cloud.y=random(75,175); cloud.s=random(0.65,1.1); }
+  }
+
+  for (const o of dinoObstacles) {
+    o.x-=dinoSpeed*dt;
+    if (o.type==='BIRD') o.frame+=dinoSpeed*dt;
+  }
+  dinoObstacles=dinoObstacles.filter(o=>o.x+o.w>-100);
+
+  // 右端から障害物までの距離を見て次を生成。
+  const last=dinoObstacles[dinoObstacles.length-1];
+  if (!last || last.x < width-dinoNextSpawnDistance) dinoSpawnObstacle(false);
+
+  if (now-dinoLastScoreTick>=DINO_SCORE_INTERVAL) {
+    const ticks=Math.floor((now-dinoLastScoreTick)/DINO_SCORE_INTERVAL);
+    dinoScore+=ticks;
+    dinoLastScoreTick+=ticks*DINO_SCORE_INTERVAL;
+  }
+
+  const nextNight=Math.floor(dinoScore/DINO_DAY_LENGTH)%2===1;
+  if (nextNight!==dinoNight) dinoNight=nextNight;
+  dinoMilestone=Math.floor(dinoScore/100);
+
+  // しゃがみ中は高さを縮め、下向き入力中の空中急降下も有効。
+  const ducking=dinoDucking && dinoPlayerY>=floorY-3;
+  const playerH=ducking?dinoDuckHeight:dinoPlayerH;
+  const playerY=dinoPlayerY+dinoPlayerH-playerH;
+  const px=DINO_PLAYER_X+8;
+  const py=playerY+5;
+  const pw=ducking?48:31;
+  const ph=playerH-8;
+
+  for (const o of dinoObstacles) {
+    let ox,oy,ow,oh;
+    if (o.type==='BIRD') { ox=o.x+8;oy=o.y+7;ow=o.w-15;oh=o.h-12; }
+    else { ox=o.x+4;oy=o.y+3;ow=o.w-8;oh=o.h-5; }
+    if (px<ox+ow && px+pw>ox && py<oy+oh && py+ph>oy) {
+      dinoGameOver=true;
+      dinoBestScore=Math.max(dinoBestScore,Math.floor(dinoScore));
+      dinoFlashUntil=millis()+250;
+      dinoDinoSound('hit');
+      break;
     }
   }
+}
 
-  dinoScore += 0.45 * dt;
-  dinoSpeed = Math.min(22, 9.5 + dinoScore / 120);
+function dinoDrawCloud(x,y,s,night) {
+  noStroke(); fill(night?215:255);
+  ellipse(x,y,62*s,25*s); ellipse(x+22*s,y-7*s,43*s,34*s); ellipse(x+45*s,y,55*s,27*s);
+}
 
-  const px = 124;
-  const py = dinoPlayerY + 5;
-  const pw = dinoPlayerW - 8;
-  const ph = dinoPlayerH - 8;
-  const ox = dinoObstacleX + 4;
-  const oy = dinoGroundY - dinoObstacleH;
-  const ow = dinoObstacleW - 8;
-  const oh = dinoObstacleH;
-
-  if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
-    dinoGameOver = true;
-    dinoBestScore = Math.max(dinoBestScore, Math.floor(dinoScore));
+function dinoDrawGround() {
+  const c=dinoNight?220:60;
+  stroke(c); strokeWeight(2); line(0,dinoGroundY,width,dinoGroundY); strokeWeight(1);
+  // 原作風の細かな地面のランダムパターン。
+  for(let x=-dinoGroundOffset;x<width+80;x+=80) {
+    line(x,dinoGroundY+8,x+32,dinoGroundY+8);
+    line(x+44,dinoGroundY+5,x+52,dinoGroundY+5);
   }
+}
+
+function dinoDrawDinosaur() {
+  const ducking=dinoDucking && dinoPlayerY>=dinoGroundY-dinoPlayerH-2;
+  const dx=DINO_PLAYER_X, baseY=dinoPlayerY;
+  const body=dinoNight?235:55, bg=dinoNight?20:247;
+  noStroke(); fill(body);
+  if(ducking) {
+    rect(dx+7,baseY+21,48,20,3); rect(dx+42,baseY+11,28,20,3);
+    rect(dx+1,baseY+27,14,8,2); rect(dx+17,baseY+40,9,8,1); rect(dx+45,baseY+40,9,8,1);
+    fill(bg); rect(dx+61,baseY+16,4,4,1); return;
+  }
+  // 頭・胴体・尻尾・脚を簡潔なドット風形状で描く。
+  rect(dx+13,baseY+13,29,31,3); rect(dx+29,baseY+3,20,23,3);
+  rect(dx+5,baseY+22,12,9,2); rect(dx+1,baseY+26,10,5,1);
+  fill(bg); rect(dx+42,baseY+8,4,4,1);
+  const legPhase=Math.floor(dinoRunFrame/7)%2; fill(body);
+  if(legPhase===0){rect(dx+10,baseY+44,7,8,1);rect(dx+34,baseY+42,7,10,1);}
+  else{rect(dx+12,baseY+42,7,10,1);rect(dx+31,baseY+44,7,8,1);}
+}
+
+function dinoDrawCactus(o) {
+  const c=dinoNight?235:55; fill(c); noStroke();
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  if(o.variant===0){
+    rect(x+w*.35,y,w*.32,h,1); rect(x+w*.08,y+h*.46,w*.28,8,1); rect(x+w*.08,y+h*.34,7,h*.24,1);
+  } else if(o.variant===1){
+    rect(x+8,y,12,h,1); rect(x+29,y+7,12,h-7,1); rect(x,y+h*.42,11,8,1); rect(x,y+h*.28,7,h*.2,1); rect(x+41,y+h*.34,10,8,1); rect(x+46,y+h*.18,7,h*.2,1);
+  } else {
+    rect(x+6,y,11,h,1); rect(x+23,y+3,11,h-3,1); rect(x+40,y+8,11,h-8,1);
+    rect(x,y+h*.48,10,8,1); rect(x,y+h*.34,7,h*.2,1); rect(x+51,y+h*.43,10,8,1); rect(x+55,y+h*.28,7,h*.2,1);
+  }
+}
+
+function dinoDrawBird(o) {
+  const c=dinoNight?235:55; fill(c); noStroke();
+  const wingUp=Math.floor(o.frame/8)%2===0;
+  rect(o.x+11,o.y+9,28,11,2); rect(o.x+35,o.y+7,11,9,1); rect(o.x+45,o.y+11,8,4,1);
+  if(wingUp){rect(o.x+17,o.y+1,15,8,1);rect(o.x+9,o.y-3,10,8,1);}
+  else{rect(o.x+16,o.y+19,16,7,1);rect(o.x+8,o.y+22,10,6,1);}
+}
+
+function dinoDrawRestartIcon() {
+  const ink=dinoNight?235:55;
+  stroke(ink); strokeWeight(3); noFill();
+  arc(width/2,height/2+18,46,46,-0.7,4.8);
+  noStroke(); fill(ink);
+  triangle(width/2+23,height/2+2,width/2+23,height/2+14,width/2+12,height/2+9);
 }
 
 function drawDinoGame() {
   updateDinoGame();
+  const bg=dinoNight?20:247, ink=dinoNight?235:55;
+  background(bg);
 
-  background(235, 245, 250);
-  noStroke();
+  for(const cloud of dinoClouds) dinoDrawCloud(cloud.x,cloud.y,cloud.s,dinoNight);
 
-  // 雲
-  fill(255);
-  for (const cloud of dinoClouds) {
-    const s = cloud.s;
-    ellipse(cloud.x, cloud.y, 58 * s, 28 * s);
-    ellipse(cloud.x + 25 * s, cloud.y - 7 * s, 45 * s, 34 * s);
-    ellipse(cloud.x + 48 * s, cloud.y, 54 * s, 27 * s);
-  }
+  // 昼は太陽、夜は三日月。画面の邪魔をしない位置に固定。
+  noStroke(); fill(ink);
+  if(dinoNight){ ellipse(width-115,100,34,34); fill(bg); ellipse(width-105,92,30,30); }
+  else ellipse(width-115,100,28,28);
 
-  // 地面
-  stroke(70);
-  strokeWeight(3);
-  line(0, dinoGroundY, width, dinoGroundY);
-  strokeWeight(1);
-  for (let x = -(frameCount * dinoSpeed) % 60; x < width; x += 60) {
-    line(x, dinoGroundY + 8, x + 28, dinoGroundY + 8);
-  }
+  dinoDrawGround();
+  for(const o of dinoObstacles) o.type==='BIRD'?dinoDrawBird(o):dinoDrawCactus(o);
+  dinoDrawDinosaur();
 
-  // 恐竜
-  const dx = 120;
-  const dy = dinoPlayerY;
-  noStroke();
-  fill(45);
-  rect(dx + 12, dy + 12, 28, 30, 5);
-  rect(dx + 28, dy + 3, 18, 22, 5);
-  rect(dx + 4, dy + 20, 12, 9, 4);
-  rect(dx + 10, dy + 39, 7, 10, 2);
-  rect(dx + 29, dy + 39, 7, 10, 2);
-  fill(235, 245, 250);
-  rect(dx + 39, dy + 8, 4, 4, 1);
+  fill(ink); textAlign(RIGHT,TOP); textSize(22);
+  text('HI '+String(dinoBestScore).padStart(5,'0')+'  '+String(Math.floor(dinoScore)).padStart(5,'0'),width-30,25);
 
-  // サボテン
-  fill(30, 150, 70);
-  rect(dinoObstacleX, dinoGroundY - dinoObstacleH, dinoObstacleW, dinoObstacleH, 4);
-  if (dinoObstacleH > 48) {
-    rect(dinoObstacleX - 9, dinoGroundY - dinoObstacleH + 18, 9, 22, 4);
-    rect(dinoObstacleX + dinoObstacleW, dinoGroundY - dinoObstacleH + 28, 9, 18, 4);
-  }
+  // 100点到達時に短いフラッシュ。ゲーム速度・スコアの手応えを出す。
+  if(dinoFlashUntil>millis()){ fill(dinoNight?247:20,90); rect(0,0,width,height); }
 
-  // スコア
-  fill(45);
-  textAlign(RIGHT, TOP);
-  textSize(22);
-  text('SCORE ' + Math.floor(dinoScore).toString().padStart(5, '0'), width - 30, 25);
-  textSize(15);
-  fill(100);
-  text('BEST ' + dinoBestScore.toString().padStart(5, '0'), width - 30, 53);
+  textAlign(CENTER,CENTER); textSize(14);
+  text('SPACE / ↑：JUMP    ↓：DUCK / 急降下    P / ESC：SELECT',width/2,height-35);
 
-  textAlign(CENTER, CENTER);
-  textSize(18);
-  fill(70);
-  text('SPACE / ↑ / W / A：JUMP    ↓ / S：急降下    P / ESC：SELECT', width / 2, height - 35);
-
-  if (dinoGameOver) {
-    fill(0, 0, 0, 130);
-    rect(0, 0, width, height);
-    fill(255);
-    textSize(54);
-    text('GAME OVER', width / 2, height / 2 - 35);
-    textSize(22);
-    text('SPACE / Aボタンでリスタート', width / 2, height / 2 + 25);
-    textSize(17);
-    text('P / ESCでセレクト画面へ', width / 2, height / 2 + 60);
+  if(dinoGameOver){
+    fill(ink); textSize(28); text('GAME OVER',width/2,height/2-30);
+    dinoDrawRestartIcon();
+    textSize(14); text('SPACE / ↑ / A：RESTART',width/2,height/2+65);
   }
 }
 
