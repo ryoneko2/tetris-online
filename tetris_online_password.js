@@ -793,55 +793,92 @@ function dinoDrawGround() {
 }
 
 function dinoDrawDinosaur() {
-  const ducking=dinoDucking && dinoPlayerY>=dinoGroundY-dinoPlayerH-2;
-  const dx=DINO_PLAYER_X, baseY=dinoPlayerY;
-  const ink=dinoNight?235:55, bg=dinoNight?20:247;
-  noStroke(); fill(ink);
+  const ducking = dinoDucking && dinoPlayerY >= dinoGroundY - dinoPlayerH - 2;
+  const dx = DINO_PLAYER_X;
+  const baseY = dinoPlayerY;
+  const ink = dinoNight ? 235 : 55;
+  const bg = dinoNight ? 20 : 247;
+  noStroke();
 
-  // Chrome Dinoを意識した、シンプルなピクセルシルエット。
-  if(ducking) {
-    // 頭を前に出した低い姿勢
-    rect(dx+8,baseY+20,43,21);
-    rect(dx+39,baseY+10,27,25);
-    rect(dx+60,baseY+15,10,12);
-    rect(dx+2,baseY+27,13,8);
-    rect(dx+19,baseY+39,9,9);
-    rect(dx+46,baseY+39,9,9);
-    fill(bg); rect(dx+60,baseY+16,4,4);
+  // 参照画像に合わせた、くっきりしたモノクロのピクセルT-Rex。
+  if (ducking) {
+    const sprite = [
+      '      #######',
+      '    ###########',
+      '   #############',
+      '  ###############',
+      '##################',
+      '###################',
+      '####   ############',
+      '###      ##########',
+      '##        #########',
+      '###        ########',
+      ' ####      ########',
+      '   ###     ########',
+      '    ###    ########',
+      '     ### ##########',
+      '      ########  ###',
+      '        ####    ###',
+      '        ####    ###',
+      '       ######  ####'
+    ];
+    drawDinoPixelSprite(sprite, dx, baseY + 7, 2.5, ink, bg, false);
     return;
   }
 
-  // 尻尾 → 胴体 → 首 → 頭の順で、原作風の輪郭を作る。
-  rect(dx+1,baseY+27,17,6);
-  rect(dx+7,baseY+23,17,8);
-  rect(dx+17,baseY+18,25,28);
-  rect(dx+34,baseY+10,12,23);
-  rect(dx+40,baseY+4,24,24);
-  rect(dx+57,baseY+9,12,17);
-  rect(dx+64,baseY+15,8,8);
+  const sprite = [
+    '          #######',
+    '         ##########',
+    '         ###########',
+    '         ######  ###',
+    '         ######',
+    '         ######',
+    '     ############',
+    '   ###############',
+    '  #################',
+    '###################',
+    '##################',
+    '############',
+    '#########',
+    '######',
+    '####',
+    ' ###',
+    ' ###',
+    ' ######',
+    ' #######',
+    '   ####',
+    '   ####',
+    '   ####',
+    '   ####',
+    '  ######',
+    '########',
+    '    ####',
+    '    ####',
+    '    ####',
+    '    ####',
+    '    ####',
+    '   ######',
+    '  ########'
+  ];
+  drawDinoPixelSprite(sprite, dx, baseY - 2, 1.65, ink, bg, true);
+}
 
-  // 背中と首の段差をピクセル風に整える
-  rect(dx+28,baseY+14,13,8);
-  rect(dx+46,baseY+1,9,8);
-
-  // 口元の切れ込み・目
-  fill(bg);
-  rect(dx+62,baseY+18,4,3);
-  rect(dx+55,baseY+9,4,4);
-
-  // 腕
+function drawDinoPixelSprite(sprite, x, y, scale, ink, bg, drawEye) {
+  noStroke();
   fill(ink);
-  rect(dx+39,baseY+28,10,5);
-  rect(dx+46,baseY+31,6,4);
-
-  // 走行アニメーション：左右の脚を交互に前後へ
-  const legPhase=Math.floor(dinoRunFrame/7)%2;
-  if(legPhase===0){
-    rect(dx+18,baseY+43,8,9); rect(dx+38,baseY+43,8,7);
-    rect(dx+13,baseY+50,13,3); rect(dx+38,baseY+50,13,3);
-  } else {
-    rect(dx+20,baseY+43,8,7); rect(dx+40,baseY+43,8,9);
-    rect(dx+13,baseY+50,13,3); rect(dx+42,baseY+50,13,3);
+  for (let row = 0; row < sprite.length; row++) {
+    const line = sprite[row];
+    for (let col = 0; col < line.length; col++) {
+      if (line[col] === '#') {
+        rect(Math.round(x + col * scale), Math.round(y + row * scale),
+             Math.ceil(scale), Math.ceil(scale));
+      }
+    }
+  }
+  if (drawEye) {
+    fill(bg);
+    rect(Math.round(x + 15 * scale), Math.round(y + 3 * scale),
+         Math.max(2, Math.ceil(scale)), Math.max(2, Math.ceil(scale)));
   }
 }
 
