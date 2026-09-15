@@ -224,10 +224,56 @@ const I_KICK_DATA = [
   [[ 0, 0], [-1, 0], [ 2, 0], [-1, 2], [ 2,-1]],
 ];
 
+// キャンバスを現在の画面内に完全に収める。
+// ゲーム内部の論理座標(1100x810)は変更せず、表示だけを縮小するので
+// テトリス側の座標・オンライン対戦処理を壊さず、DINO画面も端が切れない。
+function fitGameCanvasToViewport() {
+  if (!gameCanvas || !gameCanvas.elt) return;
+  const el = gameCanvas.elt;
+  const baseW = 1100;
+  const baseH = 810;
+  const margin = 8;
+  const vw = Math.max(320, window.innerWidth || baseW) - margin * 2;
+  const vh = Math.max(240, window.innerHeight || baseH) - margin * 2;
+  const scale = Math.min(vw / baseW, vh / baseH);
+  const displayW = Math.max(1, Math.floor(baseW * scale));
+  const displayH = Math.max(1, Math.floor(baseH * scale));
+
+  el.style.width = displayW + 'px';
+  el.style.height = displayH + 'px';
+  el.style.display = 'block';
+  el.style.margin = '0 auto';
+  el.style.maxWidth = 'calc(100vw - 16px)';
+  el.style.maxHeight = 'calc(100vh - 16px)';
+  el.style.touchAction = 'none';
+
+  // ページ自体をスクロールさせず、ゲーム画面を常に中央へ。
+  if (document.documentElement) {
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.width = '100%';
+    document.documentElement.style.height = '100%';
+  }
+  if (document.body) {
+    document.body.style.margin = '0';
+    document.body.style.padding = '0';
+    document.body.style.overflow = 'hidden';
+    document.body.style.width = '100vw';
+    document.body.style.height = '100vh';
+    document.body.style.display = 'flex';
+    document.body.style.alignItems = 'center';
+    document.body.style.justifyContent = 'center';
+  }
+}
+
+function windowResized() {
+  fitGameCanvasToViewport();
+}
+
 function setup() {
-  // ▼▼▼ 修正点 2 (テトリス25): キャンバスサイズを変更 (36 * 22 = 792) ▼▼▼
+  // 論理キャンバスは1100x810のまま。表示時だけ画面サイズに合わせて縮小する。
   const canvas = createCanvas(1100, 810);
   gameCanvas = canvas;
+  fitGameCanvasToViewport();
   // スマホのタッチをブラウザのスクロール/ズームとして処理させず、
   // p5.js の touchStarted() に確実に渡す。
   if (canvas && canvas.elt) {
@@ -235,6 +281,7 @@ function setup() {
     canvas.elt.style.webkitUserSelect = 'none';
     canvas.elt.style.userSelect = 'none';
   }
+  fitGameCanvasToViewport();
  
   // ブロックの形状データ
   burokkuShurui = [
