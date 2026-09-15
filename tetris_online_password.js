@@ -690,8 +690,8 @@ function dinoSpawnObstacle(first) {
     // 3連は低確率、2連はやや多め。各個体の高さ・幅も少しだけ変える。
     const roll = random();
     let count = 1;
-    if (score >= 180 && roll < 0.075) count = 3;
-    else if (score >= 120 && roll < 0.30) count = 2;
+    if (score >= 180 && roll < 0.115) count = 3;
+    else if (score >= 120 && roll < 0.34) count = 2;
 
     let cursor = x;
     for (let i = 0; i < count; i++) {
@@ -714,10 +714,14 @@ function dinoSpawnObstacle(first) {
     }
   }
 
-  // 速度が上がっても、最低限の反応時間を残した原作風の距離感。
-  const minGap = Math.max(185, 330 - difficulty * 75);
-  const maxGap = Math.max(minGap + 90, 540 - difficulty * 70);
-  dinoNextSpawnDistance = random(minGap, maxGap);
+  // 障害物間隔を毎回変化させる。序盤は余裕を残し、スコアが伸びるほど
+  // 最小間隔を縮め、短い間隔も混ざるようにして難易度を上げる。
+  const minGap = Math.max(145, 315 - difficulty * 115);
+  const maxGap = Math.max(minGap + 105, 560 - difficulty * 95);
+  // たまに短い間隔を引いて、一定周期に見えないようにする。
+  const shortGap = random() < (0.12 + difficulty * 0.10);
+  const gapMin = shortGap ? minGap : minGap + 28;
+  dinoNextSpawnDistance = random(gapMin, maxGap);
 }
 function handleDinoInput() {
   const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -783,8 +787,10 @@ function updateDinoGame() {
   const floorY=dinoGroundY-dinoPlayerH;
   if (dinoPlayerY>=floorY) { dinoPlayerY=floorY; dinoVelocityY=0; }
 
-  // スコアが増えるほど速度上昇。最大速度を設定。
-  dinoSpeed=Math.min(DINO_MAX_SPEED,DINO_INITIAL_SPEED+dinoScore*0.0019);
+  // スコアが増えるほど速度上昇。後半は加速を少し強めて難易度を上げる。
+  const speedBoost = dinoScore < 1000 ? dinoScore * 0.0019 :
+    1000 * 0.0019 + (dinoScore - 1000) * 0.00225;
+  dinoSpeed=Math.min(DINO_MAX_SPEED,DINO_INITIAL_SPEED+speedBoost);
   dinoGroundOffset=(dinoGroundOffset+dinoSpeed*dt)%80;
   dinoRunFrame+=dinoSpeed*dt;
 
