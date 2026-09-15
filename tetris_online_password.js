@@ -642,8 +642,8 @@ const DINO_DAY_LENGTH = 700;
 function startDinoGame() {
   gameMode = 'DINO';
   dinoGroundY = DINO_GROUND_Y;
-  dinoPlayerW = 44;
-  dinoPlayerH = 48;
+  dinoPlayerW = 42;
+  dinoPlayerH = 70;
   dinoPlayerY = dinoGroundY - dinoPlayerH;
   dinoVelocityY = 0;
   dinoSpeed = DINO_INITIAL_SPEED;
@@ -840,104 +840,29 @@ function dinoDrawGround() {
 }
 
 function dinoDrawDinosaur() {
-  const ducking = dinoDucking && dinoPlayerY >= dinoGroundY - dinoPlayerH - 2;
-  const dx = DINO_PLAYER_X;
-  const baseY = dinoPlayerY;
   const ink = dinoNight ? 235 : 55;
   const bg = dinoNight ? 20 : 247;
+  const x = Math.round(DINO_PLAYER_X);
+  const floorY = dinoGroundY;
 
-  // 完全に四角いブロックで構成した恐竜。
-  // 曲線や斜めの図形は使わず、原作風のピクセル感を強調。
-  if (ducking) {
-    const sprite = [
-      '       ##########',
-      '      ############',
-      '      ######  ####',
-      '      ############',
-      '####################',
-      '####################',
-      '####################',
-      '####################',
-      '##################',
-      '##################',
-      '################',
-      '##############',
-      '###########',
-      '########',
-      '######',
-      '####',
-      '####',
-      '######',
-      '######'
-    ];
-    drawDinoPixelSprite(sprite, dx, baseY + 6, 2.5, ink, bg, false);
-    return;
-  }
+  // 恐竜は「足・尻尾・首・頭」などを一切付けず、
+  // 参照画像どおりの単純な長方形だけで表示する。
+  // プレイ中に下キーを押した場合も、横長の長方形に変わるだけ。
+  const ducking = dinoDucking && dinoPlayerY >= floorY - dinoPlayerH - 2;
+  const w = ducking ? 56 : 42;
+  const h = ducking ? 34 : 70;
+  const y = ducking
+    ? Math.round(floorY - h)
+    : Math.round(dinoPlayerY);
 
-  const sprite = [
-    '          ##########',
-    '          ############',
-    '          ############',
-    '          ######  ####',
-    '          ############',
-    '          ############',
-    '          ####',
-    '      ########',
-    '      ########',
-    '     ##########',
-    '    ############',
-    '##################',
-    '####################',
-    '##################',
-    '################',
-    '##############',
-    '###########',
-    '########',
-    '######',
-    '####',
-    '####',
-    '####',
-    '####',
-    '######',
-    '######',
-    '######',
-    '######',
-    '######',
-    '######',
-    '######',
-    '########',
-    '########'
-  ];
-  drawDinoPixelSprite(sprite, dx, baseY - 2, 1.65, ink, bg, true);
-}
-
-function drawDinoPixelSprite(sprite, x, y, scale, ink, bg, drawEye) {
   noStroke();
   fill(ink);
-  for (let row = 0; row < sprite.length; row++) {
-    const line = sprite[row];
-    for (let col = 0; col < line.length; col++) {
-      if (line[col] === '#') {
-        rect(
-          Math.round(x + col * scale),
-          Math.round(y + row * scale),
-          Math.ceil(scale),
-          Math.ceil(scale)
-        );
-      }
-    }
-  }
+  rect(x, y, w, h);
 
-  if (drawEye) {
-    // 四角い1マスの目。
-    fill(bg);
-    rect(
-      Math.round(x + 15 * scale),
-      Math.round(y + 3 * scale),
-      Math.max(2, Math.ceil(scale)),
-      Math.max(2, Math.ceil(scale))
-    );
-  }
+  // 参照画像と同じ、右上の小さな四角い目。
+  fill(bg);
+  const eyeSize = 5;
+  rect(x + w - 13, y + 9, eyeSize, eyeSize);
 }
 
 function dinoDrawCactus(o) {
