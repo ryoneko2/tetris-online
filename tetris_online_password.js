@@ -3495,7 +3495,7 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
   window.addEventListener('keydown',e=>{
     if(!active()) return;
     const c=e.code;
-    const isControlKey=['KeyA','KeyD','KeyS','KeyW','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyC'].includes(c);
+    const isControlKey=['KeyA','KeyD','KeyS','KeyW','Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyC'].includes(c);
     if(isControlKey) e.preventDefault();
 
     // ラウンド終了：指定された操作のいずれかで全員の次ラウンド開始を要求。
@@ -3517,7 +3517,7 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
     if(c==='KeyA') onlineGuestKeyState.left=true;
     else if(c==='KeyD') onlineGuestKeyState.right=true;
     else if(c==='KeyS') onlineGuestKeyState.down=true;
-    else if(c==='KeyW'&&!e.repeat){ hardDrop(1); sendOnlineAction('hardDrop'); }
+    else if((c==='KeyW'||c==='Space')&&!e.repeat){ hardDrop(1); sendOnlineAction('hardDrop'); }
     else if(c==='ArrowLeft'&&!e.repeat){ rotateRight(1); sendOnlineAction('rotateRight'); }
     else if(c==='ArrowRight'&&!e.repeat){ rotateLeft(1); sendOnlineAction('rotateLeft'); }
     else if(c==='ArrowUp'&&!e.repeat){ rotateLeft(1); sendOnlineAction('rotateLeft'); }
