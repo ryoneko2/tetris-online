@@ -1,3 +1,12 @@
+// ブラウザのタブ・ホーム画面用アイコン（ミノ柄）を設定
+(function setTetrisFavicon() {
+  if (typeof document === 'undefined') return;
+  var icon = document.querySelector('link[rel~="icon"]');
+  if (!icon) { icon = document.createElement('link'); icon.rel = 'icon'; document.head.appendChild(icon); }
+  icon.type = 'image/png';
+  icon.href = '/favicon.png';
+})();
+
 // p5.js Tetris SRS (スーパーローテーションシステム) Mod - CPU対戦版
 // プレイヤー (左) vs CPU (右) の対戦モードを実装
 // ★ 2本先取 (Best of 3) ルールを追加
