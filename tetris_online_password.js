@@ -2754,11 +2754,15 @@ function keyPressed() {
   }
 
   // --- P1 ゲーム中の操作 ---
-  // A = 左 / D = 右 / S = 下 / W = ハードドロップ
+  // A = 左 / D = 右 / S = 下 / W または Space = ハードドロップ
   // ← = 右回転 / → = 左回転 / ↑ = 左回転 / ↓ = 右回転
   // C = ホールド
   // 矢印キーの回転は keyPressed() で直接処理するため、
   // 押しっぱなしで毎フレーム回転しない。
+  if (key === 'w' || key === 'W' || key === ' ') {
+    hardDrop(1);
+    return false;
+  }
   if (keyCode === LEFT_ARROW) {
     rotateRight(1);
   }
