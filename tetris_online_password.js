@@ -1361,8 +1361,8 @@ function handlePlayerInput() {
         let now = millis();
        
         // --- 左右移動 (キーボード WASD OR コントローラー) ---
-        let isLeftPressed = (axisX < -0.5 || dpadLeft || keyIsDown(65)); // A
-        let isRightPressed = (axisX > 0.5 || dpadRight || keyIsDown(68)); // D
+        let isLeftPressed = (axisX < -0.5 || dpadLeft || (gameMode === 'VS_LOCAL' ? keyIsDown(LEFT_ARROW) : keyIsDown(65))); // local P1: ←, other modes: A
+        let isRightPressed = (axisX > 0.5 || dpadRight || (gameMode === 'VS_LOCAL' ? keyIsDown(RIGHT_ARROW) : keyIsDown(68))); // local P1: →, other modes: D
 
         if (isLeftPressed) {
             if (dasStartTimeLeft === 0) {
@@ -1395,7 +1395,7 @@ function handlePlayerInput() {
         }
        
         // --- 下移動 (キーボード S OR コントローラー) ---
-        if (axisY > 0.5 || dpadDown || keyIsDown(83)) { // S
+        if (axisY > 0.5 || dpadDown || (gameMode === 'VS_LOCAL' ? keyIsDown(DOWN_ARROW) : keyIsDown(83))) { // local P1: ↓, other modes: S
             if (now - lastMoveDownTime > moveDownDelay) {
                 moveDown(1); 
                 lastMoveDownTime = now;
@@ -2658,6 +2658,15 @@ function applyOnlineState(s) {
 }
 
 // keyPressed を gameMode で分岐
+// ゲーム中に矢印キーやSpaceでブラウザ画面がスクロールするのを防ぐ。
+// オンライン専用ハンドラとは別に、ローカル対戦を含む全ゲームモードで有効にする。
+window.addEventListener('keydown', function(e) {
+  const gameControlKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'];
+  if (gameControlKeys.includes(e.code) && typeof gameMode !== 'undefined' && gameMode !== 'TITLE') {
+    e.preventDefault();
+  }
+}, { passive: false, capture: true });
+
 function keyPressed() {
   // オンラインはROLE 1〜4の全員が自分のP1エンジンを操作する。
   if (gameMode === 'ONLINE' && onlineRole >= 1) {
@@ -2754,29 +2763,26 @@ function keyPressed() {
   }
 
   // --- P1 ゲーム中の操作 ---
-  // A = 左 / D = 右 / S = 下 / W または Space = ハードドロップ
-  // ← = 右回転 / → = 左回転 / ↑ = 左回転 / ↓ = 右回転
+  // VS_LOCAL のP1は矢印キーで移動、Spaceでハードドロップ、Z/Xで回転。
+  // それ以外のモードは A/D/S/W または Space、矢印キーで回転。
   // C = ホールド
   // 矢印キーの回転は keyPressed() で直接処理するため、
   // 押しっぱなしで毎フレーム回転しない。
-  if (key === 'w' || key === 'W' || key === ' ') {
-    hardDrop(1);
-    return false;
-  }
-  if (keyCode === LEFT_ARROW) {
-    rotateRight(1);
-  }
-  else if (keyCode === RIGHT_ARROW) {
-    rotateLeft(1);
-  }
-  else if (keyCode === UP_ARROW) {
-    rotateLeft(1);
-  }
-  else if (keyCode === DOWN_ARROW) {
-    rotateRight(1);
-  }
-  else if (key === 'c' || key === 'C') { 
-    horudoSuru(1); 
+  if (gameMode === 'VS_LOCAL') {
+    if (key === ' ') { hardDrop(1); return false; }
+    if (key === 'z' || key === 'Z') rotateRight(1);
+    else if (key === 'x' || key === 'X') rotateLeft(1);
+    else if (key === 'c' || key === 'C') horudoSuru(1);
+  } else {
+    if (key === 'w' || key === 'W' || key === ' ') {
+      hardDrop(1);
+      return false;
+    }
+    if (keyCode === LEFT_ARROW) rotateRight(1);
+    else if (keyCode === RIGHT_ARROW) rotateLeft(1);
+    else if (keyCode === UP_ARROW) rotateLeft(1);
+    else if (keyCode === DOWN_ARROW) rotateRight(1);
+    else if (key === 'c' || key === 'C') horudoSuru(1);
   }
   
   // --- P2 ゲーム中の操作 (VS_LOCAL のみ) ---
