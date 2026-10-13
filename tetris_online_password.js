@@ -1,12 +1,3 @@
-// ブラウザのタブ・ホーム画面用アイコン（ミノ柄）を設定
-(function setTetrisFavicon() {
-  if (typeof document === 'undefined') return;
-  var icon = document.querySelector('link[rel~="icon"]');
-  if (!icon) { icon = document.createElement('link'); icon.rel = 'icon'; document.head.appendChild(icon); }
-  icon.type = 'image/png';
-  icon.href = '/favicon.png';
-})();
-
 // p5.js Tetris SRS (スーパーローテーションシステム) Mod - CPU対戦版
 // プレイヤー (左) vs CPU (右) の対戦モードを実装
 // ★ 2本先取 (Best of 3) ルールを追加
@@ -1370,8 +1361,8 @@ function handlePlayerInput() {
         let now = millis();
        
         // --- 左右移動 (キーボード WASD OR コントローラー) ---
-        let isLeftPressed = (axisX < -0.5 || dpadLeft || (gameMode === 'VS_LOCAL' ? keyIsDown(LEFT_ARROW) : keyIsDown(65))); // local P1: ←, other modes: A
-        let isRightPressed = (axisX > 0.5 || dpadRight || (gameMode === 'VS_LOCAL' ? keyIsDown(RIGHT_ARROW) : keyIsDown(68))); // local P1: →, other modes: D
+        let isLeftPressed = (axisX < -0.5 || dpadLeft || keyIsDown(65)); // P1: A
+        let isRightPressed = (axisX > 0.5 || dpadRight || keyIsDown(68)); // P1: D
 
         if (isLeftPressed) {
             if (dasStartTimeLeft === 0) {
@@ -1404,7 +1395,7 @@ function handlePlayerInput() {
         }
        
         // --- 下移動 (キーボード S OR コントローラー) ---
-        if (axisY > 0.5 || dpadDown || (gameMode === 'VS_LOCAL' ? keyIsDown(DOWN_ARROW) : keyIsDown(83))) { // local P1: ↓, other modes: S
+        if (axisY > 0.5 || dpadDown || keyIsDown(83)) { // P1: S
             if (now - lastMoveDownTime > moveDownDelay) {
                 moveDown(1); 
                 lastMoveDownTime = now;
@@ -1476,11 +1467,11 @@ function handlePlayer2Input() {
     
     // ラウンド/マッチ終了画面での入力
     if (isRoundOver || isMatchOver) {
-        if (keyIsDown(81) || keyIsDown(69)) { // Q or E
+        if (keyIsDown(85) || keyIsDown(79)) { // U or O
             if (isMatchOver) restartGame(); 
             else if (isRoundOver) nextRound();
         }
-        wasHardDropPressedP2 = keyIsDown(87); 
+        wasHardDropPressedP2 = keyIsDown(73); // I 
         return;
     }
     
@@ -1489,15 +1480,15 @@ function handlePlayer2Input() {
         dasStartTimeLeftP2 = 0;
         dasStartTimeRightP2 = 0;
         lastMoveDownTimeP2 = 0;
-        wasHardDropPressedP2 = keyIsDown(87); 
+        wasHardDropPressedP2 = keyIsDown(73); // I 
         return; 
     }
     
     let now = millis();
     
-    // --- 左右移動 (A, D) ---
-    let isLeftPressed = keyIsDown(65); // A
-    let isRightPressed = keyIsDown(68); // D
+    // --- 左右移動 (J, L) ---
+    let isLeftPressed = keyIsDown(74); // J
+    let isRightPressed = keyIsDown(76); // L
 
     if (isLeftPressed) {
         if (dasStartTimeLeftP2 === 0) {
@@ -1529,8 +1520,8 @@ function handlePlayer2Input() {
         dasStartTimeRightP2 = 0;
     }
        
-    // --- 下移動 (S) ---
-    if (keyIsDown(83)) { // S
+    // --- 下移動 (K) ---
+    if (keyIsDown(75)) { // K
         if (now - lastMoveDownTimeP2 > moveDownDelay) {
             moveDown(2); 
             lastMoveDownTimeP2 = now;
@@ -1539,12 +1530,12 @@ function handlePlayer2Input() {
         lastMoveDownTimeP2 = 0;
     }
 
-    // --- ハードドロップ (W) ---
-    const isWPressed = keyIsDown(87); // W
-    if (isWPressed && !wasHardDropPressedP2) {
+    // --- ハードドロップ (I) ---
+    const isIPressed = keyIsDown(73); // I
+    if (isIPressed && !wasHardDropPressedP2) {
         hardDrop(2);
     }
-    wasHardDropPressedP2 = isWPressed;
+    wasHardDropPressedP2 = isIPressed;
 }
 
 
@@ -2732,7 +2723,7 @@ function keyPressed() {
     if (key === 'a' || key === 'A' || key === 'x' || key === 'X' || key === 'z' || key === 'Z' || key === 'c' || key === 'C') { 
       restartGame(); 
     }
-    if (gameMode === 'VS_LOCAL' && (key === 'q' || key === 'Q' || key === 'e' || key === 'E')) {
+    if (gameMode === 'VS_LOCAL' && (key === 'u' || key === 'U' || key === 'o' || key === 'O')) {
       restartGame();
     }
   }
@@ -2740,7 +2731,7 @@ function keyPressed() {
     if (key === 'a' || key === 'A' || key === 'x' || key === 'X' || key === 'z' || key === 'Z' || key === 'c' || key === 'C') { 
       nextRound(); 
     }
-    if (gameMode === 'VS_LOCAL' && (key === 'q' || key === 'Q' || key === 'e' || key === 'E')) {
+    if (gameMode === 'VS_LOCAL' && (key === 'u' || key === 'U' || key === 'o' || key === 'O')) {
       nextRound();
     }
   }
@@ -2772,16 +2763,13 @@ function keyPressed() {
   }
 
   // --- P1 ゲーム中の操作 ---
-  // VS_LOCAL のP1は矢印キーで移動、Spaceでハードドロップ、Z/Xで回転。
-  // それ以外のモードは A/D/S/W または Space、矢印キーで回転。
-  // C = ホールド
-  // 矢印キーの回転は keyPressed() で直接処理するため、
-  // 押しっぱなしで毎フレーム回転しない。
+  // P1: WASD移動（Wはハードドロップ）、E/Q/Cホールド、F/G回転。
+  // それ以外のモードでは従来どおり Space/矢印/C も使用可能。
   if (gameMode === 'VS_LOCAL') {
-    if (key === ' ') { hardDrop(1); return false; }
-    if (key === 'z' || key === 'Z') rotateRight(1);
-    else if (key === 'x' || key === 'X') rotateLeft(1);
-    else if (key === 'c' || key === 'C') horudoSuru(1);
+    if (key === 'w' || key === 'W') { hardDrop(1); return false; }
+    if (key === 'e' || key === 'E' || key === 'q' || key === 'Q' || key === 'c' || key === 'C') horudoSuru(1);
+    else if (key === 'f' || key === 'F') rotateRight(1);
+    else if (key === 'g' || key === 'G') rotateLeft(1);
   } else {
     if (key === 'w' || key === 'W' || key === ' ') {
       hardDrop(1);
@@ -2796,18 +2784,13 @@ function keyPressed() {
   
   // --- P2 ゲーム中の操作 (VS_LOCAL のみ) ---
   if (gameMode === 'VS_LOCAL') {
-      if (key === 'w' || key === 'W') { // P2 ハードドロップ
-          // hardDrop(2); // (handlePlayer2Inputに移動)
-      }
-      else if (key === 'e' || key === 'E') { // P2 右回転
-          rotateRight(2);
-      }
-      else if (key === 'q' || key === 'Q') { // P2 左回転
-          rotateLeft(2);
-      }
-      else if (key === 'f' || key === 'F') { // P2 ホールド
+      if (key === 'u' || key === 'U' || key === 'o' || key === 'O' || key === '>') { // P2 ホールド
           horudoSuru(2);
       }
+      else if (keyCode === LEFT_ARROW) rotateRight(2);
+      else if (keyCode === RIGHT_ARROW) rotateLeft(2);
+      else if (keyCode === UP_ARROW) rotateLeft(2);
+      else if (keyCode === DOWN_ARROW) rotateRight(2);
   }
 }
 
