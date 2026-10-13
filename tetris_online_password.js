@@ -761,8 +761,6 @@ function drawUI() {
   // 区切り線
   stroke(255); 
   strokeWeight(4);
-  line(P1_BOARD_X_OFFSET, 0, P1_BOARD_X_OFFSET, height); // 88
-  line(P1_UI_NEXT_X_OFFSET, 0, P1_UI_NEXT_X_OFFSET, height); // 308
   
   if (gameMode !== 'SOLO') {
     line(P2_UI_HOLD_X_OFFSET, 0, P2_UI_HOLD_X_OFFSET, height); // 396
