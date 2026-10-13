@@ -1676,7 +1676,7 @@ function getNextBlockType(playerIndex) { // 1 or 2 (CPU)
 }
 
 // spawnNewBlock を playerIndex (1, 2) に対応
-function spawnNewBlock(playerIndex) { // 1: P1, 2: P2/CPU
+function spawnNewBlock(playerIndex, preserveHoldUsed = false) { // 1: P1, 2: P2/CPU
   let type = getNextBlockType(playerIndex); 
   let rotation = 0;
   let katachi = burokkuShurui[type][rotation];
@@ -1693,7 +1693,7 @@ function spawnNewBlock(playerIndex) { // 1: P1, 2: P2/CPU
  
   if (playerIndex === 1) {
     imaNoBurokku = newBlock;
-    horudoShiyouzumi = false;
+    if (!preserveHoldUsed) horudoShiyouzumi = false;
     lastAction = 'NONE';
     isLanded = false;
     lockDelayTimer = 0;
@@ -1705,7 +1705,7 @@ function spawnNewBlock(playerIndex) { // 1: P1, 2: P2/CPU
     }
   } else {
     imaNoBurokkuP2 = newBlock;
-    cpuHoldUsed = false;
+    if (!preserveHoldUsed) cpuHoldUsed = false;
     lastActionP2 = 'NONE';
     isLandedP2 = false;
     lockDelayTimerP2 = 0;
@@ -3022,7 +3022,7 @@ function horudoSuru(playerIndex) {
     let tempType = imaNoBurokku.type;
     if (horudoBurokku === null) {
       horudoBurokku = tempType;
-      spawnNewBlock(1); 
+      spawnNewBlock(1, true); 
     } else {
       let newType = horudoBurokku;
       horudoBurokku = tempType;
@@ -3055,7 +3055,7 @@ function horudoSuru(playerIndex) {
     let tempType = imaNoBurokkuP2.type;
     if (cpuHoldBlock === null) {
       cpuHoldBlock = tempType;
-      spawnNewBlock(2); 
+      spawnNewBlock(2, true); 
     } else {
       let newType = cpuHoldBlock;
       cpuHoldBlock = tempType;
