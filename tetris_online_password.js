@@ -692,6 +692,11 @@ function drawGrid() {
   for (let i = 0; i <= GYO; i++) {
     line(0, i * BLOKU_SAIZU, RETSU * BLOKU_SAIZU, i * BLOKU_SAIZU);
   }
+
+  // ゲーム開始後もボード枠の下辺を白く表示する
+  stroke(255);
+  strokeWeight(4);
+  line(0, GYO * BLOKU_SAIZU, RETSU * BLOKU_SAIZU, GYO * BLOKU_SAIZU);
 }
 
 // ▼▼▼ 修正点 4 (テトリス25): drawUI() を新レイアウトに合わせて変更 ▼▼▼
