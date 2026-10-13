@@ -61,7 +61,8 @@ var onlineRound = 0;
 var onlineGuestInitialized = false;
 var onlineInitialStateSent = false;
 var titleButtons = [];
-var selectedButtonIndex = 0; 
+var selectedButtonIndex = 0;
+var helpOpen = false; 
 
 // --- プレイヤー (P1) の状態 ---
 var gameBoard = []; // P1 ゲームボード
@@ -1145,8 +1146,56 @@ function drawTitleScreen() {
         textSize(12);
         text('ホストだけが押せます', width / 2, by + bh + 16);
     }
+
+    // ホーム画面右上のヘルプボタン
+    stroke(220); strokeWeight(2); fill(40, 40, 75);
+    rect(width - 125, 18, 105, 42, 8);
+    noStroke(); fill(255); textSize(19); textAlign(CENTER, CENTER);
+    text('？ ヘルプ', width - 72, 39);
+
+    if (helpOpen) drawHelpOverlay();
 }
 // ▲▲▲
+
+function drawHelpOverlay() {
+    push();
+    noStroke(); fill(0, 0, 0, 205); rect(0, 0, width, height);
+    const panelW = Math.min(760, width - 40), panelH = Math.min(620, height - 40);
+    const x = (width - panelW) / 2, y = (height - panelH) / 2;
+    stroke(210); strokeWeight(2); fill(24, 24, 43); rect(x, y, panelW, panelH, 14);
+    noStroke(); fill(255); textAlign(CENTER, CENTER); textSize(30); text('操作ヘルプ', width / 2, y + 36);
+    textAlign(LEFT, TOP); textSize(17);
+    const lines = [
+      '■ 1P SOLO（1人プレイ）',
+      'A / D：左右移動　　S：下移動　　W または Space：ハードドロップ',
+      '↑ / ↓ / ← / →：回転　　C：ホールド',
+      '',
+      '■ 1P vs CPU（CPU対戦）',
+      '移動：A / D / S　　W または Space：ハードドロップ',
+      '回転：矢印キー　　C：ホールド',
+      '',
+      '■ 1P vs 2P（ローカル対戦）',
+      '1P：A / D / S 移動、W ハードドロップ、E / Q / C ホールド、F / G 回転',
+      '2P：J / L / K 移動、I ハードドロップ、U / O / > ホールド、矢印キー 回転',
+      '',
+      '■ ONLINE BATTLE（オンライン対戦）',
+      '1Pと同じ基本操作：A / D / S 移動、W または Space ハードドロップ、',
+      '矢印キーで回転、Cでホールド。画面の案内に従ってルームに参加してください。',
+      '',
+      '共通：Pキーで一時停止／再開。',
+      '閉じるには右上の「閉じる」または Esc キーを押してください。'
+    ];
+    let yy = y + 70;
+    const lineH = panelH > 540 ? 25 : 22;
+    for (const line of lines) {
+      if (yy > y + panelH - 55) break;
+      text(line, x + 24, yy, panelW - 48, lineH + 2);
+      yy += lineH;
+    }
+    stroke(220); fill(55, 55, 90); rect(x + panelW - 125, y + panelH - 48, 105, 32, 7);
+    noStroke(); fill(255); textAlign(CENTER, CENTER); textSize(16); text('閉じる', x + panelW - 72, y + panelH - 32);
+    pop();
+}
 
 // ▼▼▼ 修正点 8 (テトリス25): ポーズ画面の描画を修正 ▼▼▼
 function drawPauseScreen() {
@@ -1546,6 +1595,15 @@ function handlePlayer2Input() {
 // モード選択のクリック/タッチ処理
 function handleTitlePointer(px, py) {
   if (gameMode !== 'TITLE') return false;
+
+  // ヘルプを開閉。表示中は背後のゲームモードを選択させない。
+  if (helpOpen) {
+    const panelW = Math.min(760, width - 40), panelH = Math.min(620, height - 40);
+    const x = (width - panelW) / 2, y = (height - panelH) / 2;
+    if ((px >= x + panelW - 125 && px <= x + panelW - 20 && py >= y + panelH - 48 && py <= y + panelH - 16) || (px < x || px > x + panelW || py < y || py > y + panelH)) helpOpen = false;
+    return true;
+  }
+  if (px >= width - 125 && px <= width - 20 && py >= 18 && py <= 60) { helpOpen = true; return true; }
 
   // オンラインのホストは、人数がそろったらSTARTボタンを押して開始する。
   const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
@@ -2671,6 +2729,10 @@ window.addEventListener('keydown', function(e) {
 }, { passive: false, capture: true });
 
 function keyPressed() {
+  if (gameMode === 'TITLE' && helpOpen) {
+    if (keyCode === ESCAPE || key === 'Escape') helpOpen = false;
+    return false;
+  }
   // オンラインはROLE 1〜4の全員が自分のP1エンジンを操作する。
   if (gameMode === 'ONLINE' && onlineRole >= 1) {
     if (isMatchOver) {
