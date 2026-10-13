@@ -693,9 +693,9 @@ function drawGrid() {
     line(0, i * BLOKU_SAIZU, RETSU * BLOKU_SAIZU, i * BLOKU_SAIZU);
   }
 
-  // ゲーム開始後もボード枠の下辺を白く表示する
+  // ゲーム開始後もボード枠の下辺を白く表示する（横のグリッド線と同じ太さ）
   stroke(255);
-  strokeWeight(4);
+  strokeWeight(1);
   line(0, GYO * BLOKU_SAIZU, RETSU * BLOKU_SAIZU, GYO * BLOKU_SAIZU);
 }
 
