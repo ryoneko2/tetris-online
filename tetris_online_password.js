@@ -1600,10 +1600,10 @@ function handleTitlePointer(px, py) {
   if (helpOpen) {
     const panelW = Math.min(760, width - 40), panelH = Math.min(620, height - 40);
     const x = (width - panelW) / 2, y = (height - panelH) / 2;
-    if ((px >= x + panelW - 125 && px <= x + panelW - 20 && py >= y + panelH - 48 && py <= y + panelH - 16) || (px < x || px > x + panelW || py < y || py > y + panelH)) helpOpen = false;
+    if ((px >= x + panelW - 150 && px <= x + panelW - 10 && py >= y + panelH - 65 && py <= y + panelH - 5) || px < x || px > x + panelW || py < y || py > y + panelH) helpOpen = false;
     return true;
   }
-  if (px >= width - 125 && px <= width - 20 && py >= 18 && py <= 60) { helpOpen = true; return true; }
+  if (px >= width - 130 && px <= width - 15 && py >= 12 && py <= 65) { helpOpen = true; return true; }
 
   // オンラインのホストは、人数がそろったらSTARTボタンを押して開始する。
   const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
@@ -1638,36 +1638,21 @@ function handleTitlePointer(px, py) {
   return false;
 }
 
-function mousePressed(event) {
-  const cnv = (gameCanvas && gameCanvas.elt) ? gameCanvas.elt : document.querySelector('canvas');
+function mousePressed() {
+  // p5.js標準のmouseX/mouseYを使い、既存のメニュー操作を維持する。
   if (gameMode === 'ONLINE') {
-    let px = Number(mouseX), py = Number(mouseY);
-    if (event && cnv && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
-      const r = cnv.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) {
-        px = (event.clientX - r.left) * (width / r.width);
-        py = (event.clientY - r.top) * (height / r.height);
+    const count = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
+    if (onlineRole === 1 && onlineJoinedCount >= count && !onlineMatchStarted) {
+      const bx = width / 2 - 160, by = 605, bw = 320, bh = 58;
+      if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
+        requestOnlineMatchStart();
+        return false;
       }
-    }
-    const count=Math.max(2,Math.min(4,Number(onlinePlayerCount)||2));
-    if(onlineRole===1 && onlineJoinedCount>=count && !onlineMatchStarted){
-      const bx=width/2-160, by=605, bw=320, bh=58;
-      if(px>=bx && px<=bx+bw && py>=by && py<=by+bh){ requestOnlineMatchStart(); return false; }
     }
     return false;
   }
   if (gameMode !== 'TITLE') return;
-  
-  let px = Number(mouseX);
-  let py = Number(mouseY);
-  if (event && cnv && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
-    const r = cnv.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) {
-      px = (event.clientX - r.left) * (width / r.width);
-      py = (event.clientY - r.top) * (height / r.height);
-    }
-  }
-  if (handleTitlePointer(px, py)) return false;
+  if (handleTitlePointer(Number(mouseX), Number(mouseY))) return false;
 }
 
 // スマホでは mousePressed だけに依存せず、タッチを直接処理する。
