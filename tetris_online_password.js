@@ -33,6 +33,11 @@ var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlinePlayerNames = {};
 var onlinePlayerName = '';
+var onlineQueueMode = '';
+var onlineFirebaseUser = null;
+var onlineProfile = null;
+var onlineLeaderboard = [];
+var onlineAuthReady = false;
 var onlineMatchStartRequested = false;
 var onlineJoinedCount = 0;
 const ONLINE_BUILD_VERSION = 'PLAYERNAME-20260904-14';
@@ -2121,6 +2126,56 @@ function addGarbageLines(board, count, currentBurokku, playerIndex) {
 // ==========================================================
 // --- ONLINE BATTLE / WebSocket ---
 // ==========================================================
+async function ensureGoogleLogin() {
+  if (!window.tetrisFirebaseAuth) {
+    alert('Firebase設定が読み込まれていません。firebase-config.jsを確認してください。');
+    return null;
+  }
+  try {
+    let user = window.tetrisFirebaseAuth.currentUser;
+    if (!user) {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      const result = await window.tetrisFirebaseAuth.signInWithPopup(provider);
+      user = result.user;
+    }
+    onlineFirebaseUser = user;
+    return user;
+  } catch (e) {
+    alert('Googleログインに失敗しました。Firebaseの承認済みドメインとGoogleログイン設定を確認してください。\n' + (e.message || ''));
+    return null;
+  }
+}
+
+async function startQueueMatch(mode) {
+  const user = await ensureGoogleLogin();
+  if (!user) return;
+  onlineQueueMode = mode;
+  onlinePlayerName = (user.displayName || 'プレイヤー').trim().slice(0,16);
+  onlineRole = 0;
+  onlineRoom = '';
+  onlineStatus = mode === 'ranked' ? 'ランク対戦の相手を探しています...' : 'フリーマッチの相手を探しています...';
+  connectOnlineSocket('queue');
+}
+
+async function showOnlineProfile() {
+  const user = await ensureGoogleLogin();
+  if (!user) return;
+  onlineFirebaseUser = user;
+  onlineQueueMode = 'profile';
+  onlinePlayerName = (user.displayName || 'プレイヤー').trim().slice(0,16);
+  connectOnlineSocket('profileRequest');
+  setTimeout(() => {
+    if (!onlineProfile) {
+      alert('プロフィールを取得できませんでした。サーバー設定と接続を確認してください。');
+      return;
+    }
+    const top = onlineLeaderboard.slice(0,10).map((p,i)=>`${i+1}. ${p.name}  レート${p.rating}  ${p.wins}勝${p.losses}敗`).join('\n');
+    alert(`あなたの記録\n名前：${onlineProfile.name}\nレート：${onlineProfile.rating}\n戦績：${onlineProfile.wins}勝 ${onlineProfile.losses}敗\n\nランキング TOP10\n${top || 'まだ記録がありません'}`);
+    if (onlineSocket && onlineSocket.readyState === WebSocket.OPEN) onlineSocket.close();
+    onlineSocket = null;
+  }, 1800);
+}
+
 function makeOnlinePassword() {
   return String(floor(100000 + random(900000))).padStart(6, '0');
 }
@@ -2130,62 +2185,45 @@ function startOnlineMenu() {
     onlineStatus = 'すでにオンライン接続中です';
     return;
   }
-
-  let playerName = prompt('オンラインで表示するプレイヤーネームを入力してください。', 'プレイヤー');
-  if (playerName === null) return;
-  playerName = playerName.trim().replace(/[<>]/g, '');
-  if (!playerName) { alert('プレイヤーネームを入力してください。'); return; }
-  if (playerName.length > 16) playerName = playerName.slice(0,16);
-  onlinePlayerName = playerName;
-
   const mode = prompt(
     'オンライン対戦\n\n' +
-    '1：部屋を作る（ホスト）\n' +
-    '2：相手の部屋に入る（ゲスト）\n\n' +
-    '数字を入力してください。'
+    '1：ランクマッチ（Googleログイン必須・レート変動）\n' +
+    '2：フリーマッチ（Googleログイン必須・レート変動なし）\n' +
+    '3：パスワード部屋（2〜4人）\n' +
+    '4：プロフィール・ランキング'
   );
-
   if (mode === null) return;
-
-  if (mode.trim() === '1') {
-    let count = prompt('何人対戦にしますか？\n\n2 / 3 / 4 のいずれかを入力してください。', '4');
-    if (count === null) return;
-    count = Number(count.trim());
-    if (![2,3,4].includes(count)) {
-      alert('人数は2、3、4のいずれかです。');
-      return;
+  if (mode.trim() === '1') { startQueueMatch('ranked'); return; }
+  if (mode.trim() === '2') { startQueueMatch('free'); return; }
+  if (mode.trim() === '4') { showOnlineProfile(); return; }
+  if (mode.trim() === '3') {
+    let playerName = prompt('オンラインで表示するプレイヤーネームを入力してください。', 'プレイヤー');
+    if (playerName === null) return;
+    playerName = playerName.trim().replace(/[<>]/g, '');
+    if (!playerName) { alert('プレイヤーネームを入力してください。'); return; }
+    if (playerName.length > 16) playerName = playerName.slice(0,16);
+    onlinePlayerName = playerName;
+    const roomMode = prompt('パスワード対戦\n\n1：部屋を作る\n2：相手の部屋に入る');
+    if (roomMode === null) return;
+    if (roomMode.trim() === '1') {
+      let count = prompt('何人対戦にしますか？ 2 / 3 / 4', '4');
+      if (count === null) return;
+      count = Number(count.trim());
+      if (![2,3,4].includes(count)) { alert('人数は2、3、4のいずれかです。'); return; }
+      onlinePlayerCount = count; onlineRole = 0; onlineRoom = makeOnlinePassword(); onlineStatus = '部屋を作成中...'; connectOnlineSocket('create'); return;
     }
-    onlinePlayerCount = count;
-    onlineRole = 0;
-    onlineRoom = makeOnlinePassword();
-    onlineStatus = '部屋を作成中...';
-    connectOnlineSocket('create');
-    return;
-  }
-
-  if (mode.trim() === '2') {
-    let password = prompt('ホストから教えてもらった6桁のパスワードを入力してください。');
-    if (password === null) return;
-    password = password.trim();
-
-    if (!/^\d{6}$/.test(password)) {
-      alert('パスワードは6桁の数字です。');
-      return;
+    if (roomMode.trim() === '2') {
+      let password = prompt('ホストから教えてもらった6桁のパスワードを入力してください。');
+      if (password === null) return; password = password.trim();
+      if (!/^\d{6}$/.test(password)) { alert('パスワードは6桁の数字です。'); return; }
+      let count = prompt('この部屋は何人対戦ですか？ 2 / 3 / 4', '3');
+      if (count === null) return; count = Number(count.trim());
+      if (![2,3,4].includes(count)) { alert('人数は2、3、4のいずれかです。'); return; }
+      onlineRole = 0; onlinePlayerCount = count; onlineRoom = password; onlineStatus = '部屋に参加中...'; connectOnlineSocket('join'); return;
     }
-
-    let count = prompt('この部屋は何人対戦ですか？\n\nホストに確認して 2 / 3 / 4 のいずれかを入力してください。', '3');
-    if (count === null) return;
-    count = Number(count.trim());
-    if (![2,3,4].includes(count)) { alert('人数は2、3、4のいずれかです。'); return; }
-    onlineRole = 0;
-    onlinePlayerCount = count;
-    onlineRoom = password;
-    onlineStatus = '部屋に参加中...';
-    connectOnlineSocket('join');
-    return;
+    alert('1 または 2 を入力してください。'); return;
   }
-
-  alert('1 または 2 を入力してください。');
+  alert('1〜4のいずれかを入力してください。');
 }
 
 function connectOnlineSocket(action) {
@@ -2199,17 +2237,62 @@ function connectOnlineSocket(action) {
   onlineSocket.onopen = () => {
     onlineConnected = true;
     onlineStatus = action === 'create' ? '部屋を作成中...' : 'パスワードを確認中...';
-    onlineSocket.send(JSON.stringify({
-      type: action,
-      password: onlineRoom,
-      playerCount: onlinePlayerCount,
-      name: onlinePlayerName
-    }));
+    if (action === 'queue' || action === 'profileRequest') {
+      const user = onlineFirebaseUser || (window.tetrisFirebaseAuth && window.tetrisFirebaseAuth.currentUser);
+      if (!user) { onlineStatus = 'Googleログインが必要です'; return; }
+      user.getIdToken(true).then(idToken => {
+        if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
+        onlineSocket.send(JSON.stringify({
+          type: action,
+          mode: onlineQueueMode,
+          idToken,
+          uid: user.uid,
+          name: onlinePlayerName || user.displayName || 'プレイヤー'
+        }));
+      }).catch(() => { onlineStatus = 'Googleログインの確認に失敗しました'; alert(onlineStatus); });
+    } else {
+      onlineSocket.send(JSON.stringify({
+        type: action,
+        password: onlineRoom,
+        playerCount: onlinePlayerCount,
+        name: onlinePlayerName
+      }));
+    }
   };
 
   onlineSocket.onmessage = (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch (e) { return; }
+
+    if (msg.type === 'profile') {
+      onlineProfile = msg.profile || null;
+      if (onlineProfile) onlineStatus = `レート ${onlineProfile.rating} / ${onlineProfile.wins}勝${onlineProfile.losses}敗`;
+      return;
+    }
+
+    if (msg.type === 'leaderboard') {
+      onlineLeaderboard = Array.isArray(msg.entries) ? msg.entries : [];
+      return;
+    }
+
+    if (msg.type === 'queueStatus') {
+      onlineStatus = msg.message || '対戦相手を探しています...';
+      return;
+    }
+
+    if (msg.type === 'queueMatched') {
+      onlineQueueMode = msg.mode || onlineQueueMode;
+      onlinePlayerCount = 2;
+      onlineRole = Number(msg.role) || 1;
+      onlineRoom = '';
+      onlineJoinedCount = 2;
+      onlineMatchStarted = false;
+      onlinePlayerNames = msg.names || {};
+      onlineScores = msg.scores || {};
+      onlineStatus = onlineQueueMode === 'ranked' ? 'ランクマッチ成立！' : 'フリーマッチ成立！';
+      beginOnlineMatchLocal();
+      return;
+    }
 
     if (msg.type === 'roomJoined') {
       onlineMatchStarted = false;
