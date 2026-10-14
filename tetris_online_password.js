@@ -1152,6 +1152,13 @@ function drawTitleScreen() {
         text('ホストだけが押せます', width / 2, by + bh + 16);
     }
 
+    // ホーム画面右上のGoogleログインボタン
+    const loggedInUser = window.tetrisFirebaseAuth && window.tetrisFirebaseAuth.currentUser;
+    stroke(220); strokeWeight(2); fill(loggedInUser ? 35 : 40, loggedInUser ? 105 : 40, loggedInUser ? 75 : 75);
+    rect(width - 292, 18, 157, 42, 8);
+    noStroke(); fill(255); textSize(16); textAlign(CENTER, CENTER);
+    text(loggedInUser ? '✓ ログイン済み' : 'Googleログイン', width - 213.5, 39);
+
     // ホーム画面右上のヘルプボタン
     stroke(220); strokeWeight(2); fill(40, 40, 75);
     rect(width - 125, 18, 105, 42, 8);
@@ -1609,6 +1616,16 @@ function handleTitlePointer(px, py) {
     return true;
   }
   if (px >= width - 130 && px <= width - 15 && py >= 12 && py <= 65) { helpOpen = true; return true; }
+  if (px >= width - 300 && px <= width - 135 && py >= 12 && py <= 65) {
+    ensureGoogleLogin().then(user => {
+      if (user) {
+        onlineFirebaseUser = user;
+        onlinePlayerName = (user.displayName || 'プレイヤー').trim().slice(0, 16);
+        onlineStatus = 'Googleログイン済み：' + onlinePlayerName;
+      }
+    });
+    return true;
+  }
 
   // オンラインのホストは、人数がそろったらSTARTボタンを押して開始する。
   const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
