@@ -1,0 +1,24 @@
+TETRIS BATTLE ONLINE — 更新版の設定
+
+ファイル
+- index.html
+- tetris_online_password.js
+- server.js
+- package.json
+- firebase-config.js
+
+重要
+1. firebase-config.js は Firebase Web アプリの公開設定です。サービスアカウントJSONや秘密鍵は絶対に入れないでください。
+2. Render の環境変数 FIREBASE_SERVICE_ACCOUNT_JSON に、Firebase Admin SDKサービスアカウントJSON全体を登録してください。秘密鍵をチャットやGitHubに貼らないでください。
+3. Firebase Authentication で Google プロバイダを有効化し、承認済みドメインに tetris-online-looy.onrender.com を登録してください。
+4. Firestore Database を作成し、サーバーのサービスアカウントに書き込み権限があることを確認してください。プロフィールは players コレクションに保存されます。
+5. Render の Build Command は `npm install` にしてから再デプロイしてください（既存 package-lock.json を使う `npm ci` 設定の場合は、package-lock.json も更新する必要があります）。
+
+対戦モード
+- ランクマッチ：Googleログイン必須、初期レート1000、ELO方式(K=32)、勝敗・レートを保存。
+- フリーマッチ：Googleログイン必須、レートは変動しません。
+- パスワード対戦：既存の6桁パスワード・2〜4人部屋を維持します。
+- プロフィール・ランキング：メニューの4番から確認できます。
+
+注意
+ゲーム盤面の処理はクライアント側にあるため、現段階では強固なチート対策ではありません。また Render の一時ファイル保存は再起動で消える場合がありますが、Firestoreが利用できる場合はそちらへ保存します。
