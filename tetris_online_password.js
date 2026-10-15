@@ -69,6 +69,10 @@ var selectedButtonIndex = 0;
 var helpOpen = false;
 // アカウント連携キーコンフィグ（P1/オンライン共通）
 var keyConfigOpen = false;
+var rankingOpen = false;
+var rankingEntries = [];
+var rankingMyRank = null;
+var rankingNotice = 'ランキングを読み込んでいます...';
 var profileTab = 'profile';
 var profileNotice = '';
 var keyCaptureAction = '';
@@ -131,6 +135,59 @@ function saveProfileName(){
   const name=entered.trim().replace(/[<>]/g,'').slice(0,16);
   if(!name){profileNotice='名前を入力してください';return;}
   profileSocketRequest({type:'profileSave',name},m=>{if(m.type==='profileSaved'){onlineProfile={...(onlineProfile||{}),...m.profile,displayName:m.profile.name};profileNotice='名前を保存しました';}});
+}
+
+
+function requestLeaderboard(){
+  rankingNotice='ランキングを読み込んでいます...';
+  const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
+  const user=auth&&auth.currentUser;
+  if(!user){rankingNotice='自分の順位を表示するにはGoogleログインが必要です';return;}
+  user.getIdToken().then(token=>{
+    let sock;
+    try { sock=new WebSocket(ONLINE_SERVER_URL); } catch(e) { rankingNotice='サーバーに接続できません'; return; }
+    sock.onopen=()=>sock.send(JSON.stringify({type:'leaderboardRequest',idToken:token,uid:user.uid}));
+    sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='leaderboard'){rankingEntries=Array.isArray(m.entries)?m.entries:[];rankingMyRank=m.myRank||null;rankingNotice=rankingEntries.length?'':'まだランキングデータがありません';sock.close();}else if(m.type==='error'){rankingNotice=m.message||'読み込みに失敗しました';sock.close();}}catch(_){} };
+    sock.onerror=()=>{rankingNotice='サーバーに接続できません'};
+    setTimeout(()=>{if(sock.readyState===WebSocket.OPEN||sock.readyState===WebSocket.CONNECTING){if(!rankingEntries.length)rankingNotice='応答がありません。再読み込みしてください';try{sock.close()}catch(_){}}},5000);
+  }).catch(()=>{rankingNotice='ログイン情報を確認できませんでした';});
+}
+function drawRankingOverlay(){
+  push(); rectMode(CORNER); noStroke(); fill(5,8,20,238); rect(0,0,width,height);
+  const panelW=Math.min(820,width-40), panelH=Math.min(700,height-40), x=(width-panelW)/2, y=(height-panelH)/2;
+  stroke(110,190,255); strokeWeight(2); fill(18,24,44); rect(x,y,panelW,panelH,16);
+  noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(30); text('ランキング',width/2,y+42);
+  fill(170,205,245); textSize(14); text('レート順 • 上位50人',width/2,y+73);
+  if(rankingMyRank && rankingMyRank.rank>50){fill('#ffe082');textAlign(CENTER,CENTER);textSize(14);text(`あなたの順位：${rankingMyRank.rank}位（レート ${rankingMyRank.rating}）`,width/2,y+91);}
+  const top=y+112, rowH=34, left=x+35, right=x+panelW-35;
+  fill('#293653'); rect(left,top,right-left,32,5); fill(210,225,245); textSize(14);
+  textAlign(CENTER,CENTER); text('順位',left+32,top+16); textAlign(LEFT,CENTER); text('プレイヤー',left+70,top+16);
+  textAlign(RIGHT,CENTER); text('レート',right-245,top+16); text('勝利',right-145,top+16); text('敗北',right-55,top+16);
+  const visible=Math.min(14,Math.floor((panelH-205)/rowH));
+  for(let i=0;i<visible;i++){
+    const yy=top+37+i*rowH, entry=rankingEntries[i];
+    fill(i%2===0?'#202b45':'#182239'); rect(left,yy,right-left,rowH-2,4);
+    if(!entry)continue;
+    fill(i<3?['#ffe082','#d7e1ef','#e5a87a'][i]: '#ffffff'); textAlign(CENTER,CENTER); textSize(15); text(String(i+1),left+32,yy+16);
+    fill(245); textAlign(LEFT,CENTER); textSize(16); text(String(entry.name||'プレイヤー').slice(0,18),left+70,yy+16);
+    fill('#9fe7ff'); textAlign(RIGHT,CENTER); text(String(Number(entry.rating)||1000),right-245,yy+16);
+    fill(220); text(String(Number(entry.wins)||0),right-145,yy+16); text(String(Number(entry.losses)||0),right-55,yy+16);
+  }
+  if(!rankingEntries.length){fill(255,220,120);textAlign(CENTER,CENTER);textSize(15);text(rankingNotice,width/2,top+95);}
+  fill(190); textAlign(CENTER,CENTER); textSize(13); text('ランキングはランク対戦のレートを基準に表示します',width/2,y+panelH-65);
+  fill(55,85,125); rect(width/2-180,y+panelH-50,150,34,7); rect(width/2+30,y+panelH-50,150,34,7);
+  fill(255); textSize(15); text('再読み込み',width/2-105,y+panelH-33); text('閉じる',width/2+105,y+panelH-33);
+  pop();
+}
+function handleRankingPointer(px,py){
+  if(!rankingOpen)return false;
+  const panelW=Math.min(820,width-40), panelH=Math.min(700,height-40), y=(height-panelH)/2;
+  if(py>=y+panelH-52&&py<=y+panelH-12){
+    if(px>=width/2-180&&px<=width/2-30){requestLeaderboard();return true;}
+    if(px>=width/2+30&&px<=width/2+180){rankingOpen=false;return true;}
+  }
+  if(px< (width-panelW)/2||px>(width+panelW)/2||py<y||py>y+panelH){rankingOpen=false;return true;}
+  return true;
 }
 
 function drawKeyConfigOverlay(){
@@ -1273,7 +1330,8 @@ function drawTitleScreen() {
       text(`Google: ${onlineProfile.displayName || 'ログイン中'}  レート ${onlineProfile.rating}  勝 ${onlineProfile.wins || 0} 敗 ${onlineProfile.losses || 0}`, 18, 18);
     }
 
-    // ホーム画面右上のキー設定ボタン
+    // ホーム画面右上のプロフィール・ランキングボタン
+    stroke(220); strokeWeight(2); fill(40, 40, 75); rect(width - 395, 18, 125, 42, 8); noStroke(); fill(255); textSize(17); textAlign(CENTER, CENTER); text('ランキング', width - 332, 39);
     stroke(220); strokeWeight(2); fill(40, 40, 75); rect(width - 260, 18, 125, 42, 8); noStroke(); fill(255); textSize(17); textAlign(CENTER, CENTER); text('プロフィール', width - 197, 39);
 
     // ホーム画面右上のヘルプボタン
@@ -1284,6 +1342,7 @@ function drawTitleScreen() {
 
     if (helpOpen) drawHelpOverlay();
     if (keyConfigOpen) drawKeyConfigOverlay();
+    if (rankingOpen) drawRankingOverlay();
 }
 // ▲▲▲
 
@@ -1727,6 +1786,7 @@ function handleTitlePointer(px, py) {
   if (gameMode !== 'TITLE') return false;
 
   if (keyConfigOpen) return handleKeyConfigPointer(px,py);
+  if (rankingOpen) return handleRankingPointer(px,py);
   // ヘルプを開閉。表示中は背後のゲームモードを選択させない。
   if (helpOpen) {
     const panelW = Math.min(760, width - 40), panelH = Math.min(620, height - 40);
@@ -1734,6 +1794,7 @@ function handleTitlePointer(px, py) {
     if ((px >= x + panelW - 150 && px <= x + panelW - 10 && py >= y + panelH - 65 && py <= y + panelH - 5) || px < x || px > x + panelW || py < y || py > y + panelH) helpOpen = false;
     return true;
   }
+  if (px >= width - 395 && px <= width - 270 && py >= 12 && py <= 65) { rankingOpen=true; requestLeaderboard(); return true; }
   if (px >= width - 270 && px <= width - 135 && py >= 12 && py <= 65) { keyConfigOpen=true; profileTab='profile'; profileNotice=''; requestProfileLoad(); return true; }
   if (px >= width - 130 && px <= width - 15 && py >= 12 && py <= 65) { helpOpen = true; return true; }
 
