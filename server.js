@@ -107,7 +107,7 @@ wss.on('connection',ws=>{
   return;
  }
  if(msg.type==='keyConfigGet'){
-  try{const uid=await authenticate(msg);await loadProfiles();const p=getProfile(uid,'プレイヤー');send(ws,{type:'keyConfig',keyConfig:p.keyConfig||null});}catch(e){send(ws,{type:'error',message:e.message||'キー設定を読み込めませんでした。'});}return;
+  try{const uid=await authenticate(msg);await loadProfiles();const p=getProfile(uid);send(ws,{type:'keyConfig',keyConfig:p.keyConfig||null});}catch(e){send(ws,{type:'error',message:e.message||'キー設定を読み込めませんでした。'});}return;
  }
  if(msg.type==='keyConfigSave'){
   try{
@@ -117,11 +117,14 @@ wss.on('connection',ws=>{
    const actions=['left','right','down','hardDrop','rotateLeft','rotateRight','hold'];
    if(!incoming||typeof incoming!=='object'||actions.some(k=>!allowed.has(incoming[k])))return send(ws,{type:'error',message:'キー設定の内容が不正です。'});
    if(new Set(actions.map(k=>incoming[k])).size!==actions.length)return send(ws,{type:'error',message:'同じキーを複数の操作に設定できません。'});
-   const p=getProfile(uid,'プレイヤー');p.keyConfig=Object.fromEntries(actions.map(k=>[k,incoming[k]]));p.updatedAt=Date.now();await saveProfiles();send(ws,{type:'keyConfigSaved'});
+   const p=getProfile(uid);p.keyConfig=Object.fromEntries(actions.map(k=>[k,incoming[k]]));p.updatedAt=Date.now();await saveProfiles();send(ws,{type:'keyConfigSaved'});
   }catch(e){send(ws,{type:'error',message:e.message||'キー設定を保存できませんでした。'});}return;
  }
  if(msg.type==='profileRequest'){
   try{await loadProfiles();const uid=await authenticate(msg);const p=getProfile(uid,msg.name);send(ws,{type:'profile',profile:{name:p.name,rating:p.rating,wins:p.wins,losses:p.losses,games:p.games}});send(ws,{type:'leaderboard',entries:leaderboard()});}catch(e){send(ws,{type:'error',message:e.message});}return;
+ }
+ if(msg.type==='profileSave'){
+  try{const uid=await authenticate(msg);await loadProfiles();const name=cleanName(msg.name,'プレイヤー');const p=getProfile(uid);p.name=name;p.updatedAt=Date.now();await saveProfiles();send(ws,{type:'profileSaved',profile:{name:p.name,rating:p.rating,wins:p.wins,losses:p.losses,games:p.games}});}catch(e){send(ws,{type:'error',message:e.message||'プロフィールを保存できませんでした。'});}return;
  }
  if(msg.type==='create'){
   removePlayer(ws,false);const password=/^\d{6}$/.test(String(msg.password||''))&&!rooms.has(String(msg.password))?String(msg.password):makePassword();const n=[2,3,4].includes(Number(msg.playerCount))?Number(msg.playerCount):2;const room={password,mode:'password',playerCount:n,players:[],started:false,roundOver:false,round:0,ended:false,resultRecorded:false};rooms.set(password,room);const player={ws,role:1,wins:0,alive:true,name:cleanName(msg.name,'PLAYER 1'),uid:null};room.players.push(player);ws.room=room;ws.role=1;send(ws,{type:'roomJoined',role:1,room:password,password,playerCount:n,round:0,...snapshot(room)});send(ws,roomStatus(room));return;
