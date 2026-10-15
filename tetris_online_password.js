@@ -300,16 +300,29 @@ var wasLGamepadPressed = false;
 var wasRGamepadPressed = false;
 var wasStartGamepadPressed = false; 
 
-// 接続中のゲームパッドを取得する。index 0固定だと、他のパッドが先に
-// 登録されている環境でSwitchコントローラーを見失うことがある。
+// 接続中のゲームパッドをまとめて読む。
+// Switch Joy-Conは左右が別々のGamepadとして公開されることがあるため、
+// 片方だけを選ぶと、もう片方のボタン入力をゲームが受け取れない。
 function getActiveGamepad() {
   try {
     if (!navigator.getGamepads) return null;
-    const pads = Array.from(navigator.getGamepads() || []).filter(Boolean);
+    const pads = Array.from(navigator.getGamepads() || []).filter(p => p && p.connected !== false);
     if (!pads.length) return null;
-    // 現在ボタンが押されているパッドを優先し、なければ接続済みの先頭を使う。
-    const active = pads.find(p => p.connected !== false && p.buttons && Array.from(p.buttons).some(b => b && b.pressed));
-    return active || pads.find(p => p.connected !== false) || pads[0] || null;
+    if (pads.length === 1) return pads[0];
+
+    const buttonCount = Math.max(0, ...pads.map(p => p.buttons ? p.buttons.length : 0));
+    const axisCount = Math.max(0, ...pads.map(p => p.axes ? p.axes.length : 0));
+    const buttons = Array.from({length: buttonCount}, (_, i) => {
+      const pressed = pads.some(p => p.buttons && p.buttons[i] && p.buttons[i].pressed);
+      const values = pads.map(p => p.buttons && p.buttons[i]).filter(Boolean);
+      const value = Math.max(0, ...values.map(b => Number(b.value) || (b.pressed ? 1 : 0)));
+      return { pressed, value, touched: values.some(b => !!b.touched) };
+    });
+    const axes = Array.from({length: axisCount}, (_, i) => {
+      const values = pads.map(p => p.axes && Number.isFinite(p.axes[i]) ? p.axes[i] : 0);
+      return values.reduce((best, v) => Math.abs(v) > Math.abs(best) ? v : best, 0);
+    });
+    return { connected: true, index: -1, id: pads.map(p => p.id || 'Gamepad').join(' + '), buttons, axes };
   } catch (e) {
     return null;
   }
