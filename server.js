@@ -34,7 +34,8 @@ function send(ws,msg){ if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.str
 function broadcast(room,msg,except=null){ for(const p of room.players) if(p && p!==except) send(p.ws,msg); }
 function cleanName(name,fallback){ let s=String(name||'').trim().replace(/[<>]/g,''); if(!s)s=fallback; return Array.from(s).slice(0,16).join(''); }
 function getProfile(uid,name){ if(!profiles[uid]) profiles[uid]={uid,name:cleanName(name,'プレイヤー'),rating:1000,wins:0,losses:0,games:0,updatedAt:Date.now()}; else if(name) profiles[uid].name=cleanName(name,profiles[uid].name); return profiles[uid]; }
-function leaderboard(){ return Object.values(profiles).sort((a,b)=>(b.rating-a.rating)||(b.wins-a.wins)).slice(0,50).map(p=>({name:p.name,rating:p.rating,wins:p.wins,losses:p.losses})); }
+function sortedLeaderboard(){ return Object.values(profiles).sort((a,b)=>(b.rating-a.rating)||(b.wins-a.wins)); }
+function leaderboard(uid=null){ const all=sortedLeaderboard(); const entries=all.slice(0,50).map((p,i)=>({rank:i+1,uid:p.uid||null,name:p.name,rating:p.rating,wins:p.wins,losses:p.losses})); let myRank=null; if(uid){const index=all.findIndex(p=>p.uid===uid);if(index>=0)myRank={rank:index+1,uid:all[index].uid||uid,name:all[index].name,rating:all[index].rating,wins:all[index].wins,losses:all[index].losses};} return {entries,myRank}; }
 function expected(r1,r2){ return 1/(1+Math.pow(10,(r2-r1)/400)); }
 async function recordRankedResult(room,winner){
   if(!['ranked','free'].includes(room.mode)||room.resultRecorded) return;
@@ -48,7 +49,7 @@ async function recordRankedResult(room,winner){
   }
   pa.games++;pb.games++; if(sa){pa.wins++;pb.losses++;}else{pb.wins++;pa.losses++;}
   pa.updatedAt=pb.updatedAt=Date.now(); await saveProfiles();
-  for(const p of room.players){ const profile=getProfile(p.uid,p.name); send(p.ws,{type:'profile',profile:{name:profile.name,rating:profile.rating,wins:profile.wins,losses:profile.losses,games:profile.games}}); send(p.ws,{type:'leaderboard',entries:leaderboard()}); }
+  for(const p of room.players){ const profile=getProfile(p.uid,p.name); send(p.ws,{type:'profile',profile:{name:profile.name,rating:profile.rating,wins:profile.wins,losses:profile.losses,games:profile.games}}); send(p.ws,{type:'leaderboard',...leaderboard(p.uid)}); }
 }
 function snapshot(room){ const scores={},alive={},names={}; for(const p of room.players){if(!p)continue;scores[p.role]=p.wins||0;alive[p.role]=p.alive!==false;names[p.role]=p.name||('PLAYER '+p.role);} return {scores,alive,names}; }
 function roomStatus(room){const st=snapshot(room);return {type:'roomStatus',playerCount:room.playerCount,count:room.players.length,started:!!room.started,round:room.round||0,roundOver:!!room.roundOver,scores:st.scores,alive:st.alive,names:st.names};}
@@ -93,7 +94,7 @@ wss.on('connection',ws=>{
   const mode=String(msg.mode||'');if(!['ranked','free'].includes(mode))return send(ws,{type:'error',message:'対戦モードが不正です。'});
   let uid=null;
   try{uid=await authenticate(msg);}catch(e){return send(ws,{type:'error',message:e.message||'Googleログインを確認できません。'});} if(!uid)return;
-  const profile=getProfile(uid,msg.name);send(ws,{type:'profile',profile:{name:profile.name,rating:profile.rating,wins:profile.wins,losses:profile.losses,games:profile.games}});send(ws,{type:'leaderboard',entries:leaderboard()});
+  const profile=getProfile(uid,msg.name);send(ws,{type:'profile',profile:{name:profile.name,rating:profile.rating,wins:profile.wins,losses:profile.losses,games:profile.games}});send(ws,{type:'leaderboard',...leaderboard(uid)});
   ws.uid=uid;ws.name=cleanName(msg.name,'プレイヤー');ws.queueMode=mode;
   const entry={ws,uid,name:ws.name,queuedAt:Date.now(),rating:uid?getProfile(uid,ws.name).rating:1000};
   const q=queues[mode];let matchIndex=-1;
@@ -105,6 +106,9 @@ wss.on('connection',ws=>{
   if(matchIndex>=0){const other=q.splice(matchIndex,1)[0];beginQueueMatch(other,entry,mode);}
   else {q.push(entry);send(ws,{type:'queueStatus',message:mode==='ranked'?'ランク対戦の相手を探しています...':'フリーマッチの相手を探しています...'});}
   return;
+ }
+ if(msg.type==='leaderboardRequest'){
+  try{const uid=await authenticate(msg);await loadProfiles();send(ws,{type:'leaderboard',...leaderboard(uid)});}catch(e){send(ws,{type:'error',message:e.message||'ランキングを読み込めませんでした。'});}return;
  }
  if(msg.type==='keyConfigGet'){
   try{const uid=await authenticate(msg);await loadProfiles();const p=getProfile(uid);send(ws,{type:'keyConfig',keyConfig:p.keyConfig||null});}catch(e){send(ws,{type:'error',message:e.message||'キー設定を読み込めませんでした。'});}return;
@@ -121,7 +125,7 @@ wss.on('connection',ws=>{
   }catch(e){send(ws,{type:'error',message:e.message||'キー設定を保存できませんでした。'});}return;
  }
  if(msg.type==='profileRequest'){
-  try{await loadProfiles();const uid=await authenticate(msg);const p=getProfile(uid,msg.name);send(ws,{type:'profile',profile:{name:p.name,rating:p.rating,wins:p.wins,losses:p.losses,games:p.games}});send(ws,{type:'leaderboard',entries:leaderboard()});}catch(e){send(ws,{type:'error',message:e.message});}return;
+  try{await loadProfiles();const uid=await authenticate(msg);const p=getProfile(uid,msg.name);send(ws,{type:'profile',profile:{name:p.name,rating:p.rating,wins:p.wins,losses:p.losses,games:p.games}});send(ws,{type:'leaderboard',...leaderboard(uid)});}catch(e){send(ws,{type:'error',message:e.message});}return;
  }
  if(msg.type==='profileSave'){
   try{const uid=await authenticate(msg);await loadProfiles();const name=cleanName(msg.name,'プレイヤー');const p=getProfile(uid);p.name=name;p.updatedAt=Date.now();await saveProfiles();send(ws,{type:'profileSaved',profile:{name:p.name,rating:p.rating,wins:p.wins,losses:p.losses,games:p.games}});}catch(e){send(ws,{type:'error',message:e.message||'プロフィールを保存できませんでした。'});}return;
