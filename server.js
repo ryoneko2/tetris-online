@@ -106,6 +106,20 @@ wss.on('connection',ws=>{
   else {q.push(entry);send(ws,{type:'queueStatus',message:mode==='ranked'?'ランク対戦の相手を探しています...':'フリーマッチの相手を探しています...'});}
   return;
  }
+ if(msg.type==='keyConfigGet'){
+  try{const uid=await authenticate(msg);await loadProfiles();const p=getProfile(uid,'プレイヤー');send(ws,{type:'keyConfig',keyConfig:p.keyConfig||null});}catch(e){send(ws,{type:'error',message:e.message||'キー設定を読み込めませんでした。'});}return;
+ }
+ if(msg.type==='keyConfigSave'){
+  try{
+   const uid=await authenticate(msg);await loadProfiles();
+   const incoming=msg.keyConfig;
+   const allowed=new Set(['KeyA','KeyB','KeyC','KeyD','KeyE','KeyF','KeyG','KeyH','KeyI','KeyJ','KeyK','KeyL','KeyM','KeyN','KeyO','KeyP','KeyQ','KeyR','KeyS','KeyT','KeyU','KeyV','KeyW','KeyX','KeyY','KeyZ','Digit0','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight','ControlLeft','AltLeft']);
+   const actions=['left','right','down','hardDrop','rotateLeft','rotateRight','hold'];
+   if(!incoming||typeof incoming!=='object'||actions.some(k=>!allowed.has(incoming[k])))return send(ws,{type:'error',message:'キー設定の内容が不正です。'});
+   if(new Set(actions.map(k=>incoming[k])).size!==actions.length)return send(ws,{type:'error',message:'同じキーを複数の操作に設定できません。'});
+   const p=getProfile(uid,'プレイヤー');p.keyConfig=Object.fromEntries(actions.map(k=>[k,incoming[k]]));p.updatedAt=Date.now();await saveProfiles();send(ws,{type:'keyConfigSaved'});
+  }catch(e){send(ws,{type:'error',message:e.message||'キー設定を保存できませんでした。'});}return;
+ }
  if(msg.type==='profileRequest'){
   try{await loadProfiles();const uid=await authenticate(msg);const p=getProfile(uid,msg.name);send(ws,{type:'profile',profile:{name:p.name,rating:p.rating,wins:p.wins,losses:p.losses,games:p.games}});send(ws,{type:'leaderboard',entries:leaderboard()});}catch(e){send(ws,{type:'error',message:e.message});}return;
  }
