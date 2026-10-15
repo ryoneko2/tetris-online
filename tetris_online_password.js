@@ -299,6 +299,22 @@ var wasUpGamepadPressed = false;
 var wasLGamepadPressed = false; 
 var wasRGamepadPressed = false;
 var wasStartGamepadPressed = false; 
+
+// 接続中のゲームパッドを取得する。index 0固定だと、他のパッドが先に
+// 登録されている環境でSwitchコントローラーを見失うことがある。
+function getActiveGamepad() {
+  try {
+    if (!navigator.getGamepads) return null;
+    const pads = Array.from(navigator.getGamepads() || []).filter(Boolean);
+    if (!pads.length) return null;
+    // 現在ボタンが押されているパッドを優先し、なければ接続済みの先頭を使う。
+    const active = pads.find(p => p.connected !== false && p.buttons && Array.from(p.buttons).some(b => b && b.pressed));
+    return active || pads.find(p => p.connected !== false) || pads[0] || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 var wasTitleUpPressed = false;
 var wasTitleDownPressed = false;
 
@@ -817,7 +833,7 @@ function draw() {
     // P1: 自然落下
     else if (!isLanded && frameCount % framesPerDrop === 0) {
         let isSoftDropping = false;
-        const gp = navigator.getGamepads()[0];
+        const gp = getActiveGamepad();
         if (gp) {
              isSoftDropping = isSoftDropping || (gp.axes[1] > 0.5 || gp.buttons[13].pressed);
         }
@@ -1523,8 +1539,7 @@ function drawMatchOverScreen() {
 
 // プレイヤーの入力処理
 function handlePlayerInput() {
-    const gamepads = navigator.getGamepads();
-    const gp = gamepads[0]; 
+    const gp = getActiveGamepad(); 
    
     // --- 汎用ボタン状態 (コントローラー) ---
     let isAPressed = false;
@@ -3775,8 +3790,7 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
   let previousPadUp = false;
   function pollOnlineGamepad(){
     try {
-      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = pads && pads[0];
+      const gp = getActiveGamepad();
       if (!gp) { previousPadButtons = []; previousPadUp = false; return; }
       const pressed = i => !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed);
       const edge = i => pressed(i) && !previousPadButtons[i];
