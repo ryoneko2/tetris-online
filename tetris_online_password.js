@@ -1358,6 +1358,9 @@ function drawHelpOverlay() {
       '■ ゲーム操作',
       '1P SOLO / 1P vs CPU：A・D＝左右移動、S＝下移動、W または Space＝ハードドロップ',
       '回転＝矢印キー、ホールド＝C、P＝一時停止／再開',
+      '■ Switchコントローラー（対応ブラウザ）',
+      '十字キー／左スティック＝移動、上＝ハードドロップ、A/B＝回転、X/Y/L/R＝ホールド、＋＝ポーズ',
+      '接続後、ゲーム画面を一度クリックしてから操作してください。ブラウザによって対応状況が異なります。',
       '',
       '■ 1P vs 2P（同じ端末で対戦）',
       '1P：A・D・S＝移動、W＝ハードドロップ、E・Q・C＝ホールド、F・G＝回転',
@@ -1585,7 +1588,9 @@ function handlePlayerInput() {
         
         if ((isAPressed && !wasAGamepadPressed) || (isBPressed && !wasBGamepadPressed)) {
              let selectedMode = titleButtons[selectedButtonIndex].mode;
-             if (selectedMode !== 'ONLINE') {
+             if (selectedMode === 'ONLINE') {
+                 startOnlineMenu();
+             } else {
                  gameMode = selectedMode;
                  nextRound(); 
              }
@@ -1648,24 +1653,16 @@ function handlePlayerInput() {
             lastMoveDownTime = 0;
         }
        
-        // --- ハードドロップ (W OR コントローラー上) ---
-        const isUpPressed = (axisY < -0.5 || dpadUp); // キーボードWはwindow.keydownだけで処理 
-        if (isUpPressed && !wasUpGamepadPressed) {
-            hardDrop(1);
+        // --- ハードドロップ・回転・ホールド ---
+        // ONLINEは専用Gamepadハンドラーからサーバーにも入力を送るため、ここでの二重実行を避ける。
+        const isUpPressed = (axisY < -0.5 || dpadUp);
+        if (gameMode !== 'ONLINE') {
+            if (isUpPressed && !wasUpGamepadPressed) hardDrop(1);
+            if ((isBPressed && !wasBGamepadPressed) || (isYPressed && !wasYGamepadPressed)) rotateRight(1);
+            if ((isAPressed && !wasAGamepadPressed) || (isXPressed && !wasXGamepadPressed)) rotateLeft(1);
+            if ((isLPressed && !wasLGamepadPressed) || (isRPressed && !wasRGamepadPressed)) horudoSuru(1);
         }
         wasUpGamepadPressed = isUpPressed;
-        // --- 回転 (コントローラー) ---
-        if ((isBPressed && !wasBGamepadPressed) || (isYPressed && !wasYGamepadPressed)) { 
-            rotateRight(1); 
-        }
-        if ((isAPressed && !wasAGamepadPressed) || (isXPressed && !wasXGamepadPressed)) { 
-            rotateLeft(1); 
-        }
-       
-        // --- ホールド (コントローラー) ---
-        if ((isLPressed && !wasLGamepadPressed) || (isRPressed && !wasRGamepadPressed)) {
-            horudoSuru(1);
-        }
     }
    
     // ポーズボタンは常にチェック
@@ -3773,6 +3770,41 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
 // ============================================================
 (function setupOnlineKeyboardControls(){
   const active=()=>typeof gameMode!=='undefined'&&gameMode==='ONLINE'&&typeof onlineRole!=='undefined'&&onlineRole>=1;
+  // Switch Pro Controller / Joy-Con等のGamepad API入力。押しっぱなしの連続発火を防ぐ。
+  let previousPadButtons = [];
+  let previousPadUp = false;
+  function pollOnlineGamepad(){
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = pads && pads[0];
+      if (!gp) { previousPadButtons = []; previousPadUp = false; return; }
+      const pressed = i => !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed);
+      const edge = i => pressed(i) && !previousPadButtons[i];
+      if (active()) {
+        if (isMatchOver) {
+          if ([0,1,4,5,9].some(edge)) { if (onlineSocket) { try { onlineSocket.close(); } catch(e) {} } onlineSocket=null; onlineConnected=false; onlineMatchStarted=false; onlineMatchStartRequested=false; onlineRoundRequestSent=false; gameMode='TITLE'; isStarted=false; isRoundOver=false; isMatchOver=false; onlineStatus=''; }
+        } else if (isRoundOver) {
+          if ([0,1,2,3,4,5,9].some(edge) || (pressed(12)&&!previousPadUp)) requestOnlineNextRound();
+        } else if (!isPaused && countdownTime===0 && isStarted) {
+          // D-pad and left stick feed the same continuous movement state as keyboard controls.
+          const axisX = gp.axes && Number.isFinite(gp.axes[0]) ? gp.axes[0] : 0;
+          const axisY = gp.axes && Number.isFinite(gp.axes[1]) ? gp.axes[1] : 0;
+          onlineGuestKeyState.left = !!(pressed(14) || axisX < -0.5);
+          onlineGuestKeyState.right = !!(pressed(15) || axisX > 0.5);
+          onlineGuestKeyState.down = !!(pressed(13) || axisY > 0.5);
+          if ((pressed(12) || axisY < -0.5) && !previousPadUp) { hardDrop(1); sendOnlineAction('hardDrop'); }
+          if (edge(0)) { rotateLeft(1); sendOnlineAction('rotateLeft'); }
+          if (edge(1)) { rotateRight(1); sendOnlineAction('rotateRight'); }
+          if (edge(2)) { hardDrop(1); sendOnlineAction('hardDrop'); }
+          if (edge(4) || edge(5) || edge(3)) { horudoSuru(1); sendOnlineAction('hold'); }
+          if (edge(9)) { isPaused = !isPaused; if (!isPaused) countdownTime = millis(); }
+        }
+      }
+      previousPadButtons = Array.from({length: gp.buttons ? gp.buttons.length : 0}, (_,i)=>pressed(i));
+      previousPadUp = !!(pressed(12) || (gp.axes && gp.axes[1] < -0.5));
+    } catch(e) {}
+  }
+  setInterval(pollOnlineGamepad, 16);
   window.addEventListener('keydown',e=>{
     if(!active()) return;
     const c=e.code;
