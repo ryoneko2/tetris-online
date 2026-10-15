@@ -33,11 +33,10 @@ var onlinePlayerCount = 2;
 var onlineRemoteStates = {};
 var onlinePlayerNames = {};
 var onlinePlayerName = '';
-var onlineQueueMode = '';
-var onlineFirebaseUser = null;
+var onlineQueueMode = ''; // 'ranked' / 'free' / 'password'
+var onlineUser = null;
+var onlineIdToken = '';
 var onlineProfile = null;
-var onlineLeaderboard = [];
-var onlineAuthReady = false;
 var onlineMatchStartRequested = false;
 var onlineJoinedCount = 0;
 const ONLINE_BUILD_VERSION = 'PLAYERNAME-20260904-14';
@@ -67,7 +66,68 @@ var onlineGuestInitialized = false;
 var onlineInitialStateSent = false;
 var titleButtons = [];
 var selectedButtonIndex = 0;
-var helpOpen = false; 
+var helpOpen = false;
+// アカウント連携キーコンフィグ（P1/オンライン共通）
+var keyConfigOpen = false;
+var keyCaptureAction = '';
+var keyConfigNotice = '';
+var keyConfig = { left:'KeyA', right:'KeyD', down:'KeyS', hardDrop:'KeyW', rotateLeft:'KeyG', rotateRight:'KeyF', hold:'KeyC' };
+var keyConfigDefaults = { left:'KeyA', right:'KeyD', down:'KeyS', hardDrop:'KeyW', rotateLeft:'KeyG', rotateRight:'KeyF', hold:'KeyC' };
+var keyConfigActions = [ ['left','左移動'], ['right','右移動'], ['down','下移動'], ['hardDrop','ハードドロップ'], ['rotateLeft','左回転'], ['rotateRight','右回転'], ['hold','ホールド'] ];
+function keyCodeLabel(code){ const names={Space:'Space',ArrowLeft:'←',ArrowRight:'→',ArrowUp:'↑',ArrowDown:'↓',Enter:'Enter',ShiftLeft:'左Shift',ShiftRight:'右Shift',ControlLeft:'左Ctrl',AltLeft:'左Alt'}; if(names[code])return names[code]; return String(code||'').replace(/^Key/,'').replace(/^Digit/,''); }
+function keyCodeNumber(code){ if(code==='Space')return 32; if(code==='ArrowLeft')return LEFT_ARROW; if(code==='ArrowRight')return RIGHT_ARROW; if(code==='ArrowUp')return UP_ARROW; if(code==='ArrowDown')return DOWN_ARROW; if(/^Key[A-Z]$/.test(code))return code.charCodeAt(3); if(/^Digit[0-9]$/.test(code))return code.charCodeAt(5); return -1; }
+function isBoundKey(code){ return keyConfigActions.some(a=>keyConfig[a[0]]===code); }
+function requestKeyConfigSave(){
+  const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
+  const user=auth&&auth.currentUser;
+  if(!user){keyConfigNotice='先にGoogleログインしてください';return;}
+  user.getIdToken().then(token=>{
+    const sock=new WebSocket(ONLINE_SERVER_URL);
+    sock.onopen=()=>sock.send(JSON.stringify({type:'keyConfigSave',idToken:token,uid:user.uid,keyConfig}));
+    sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='keyConfigSaved')keyConfigNotice='アカウントに保存しました';else if(m.type==='error')keyConfigNotice=m.message||'保存できませんでした';}catch(_){}};
+    sock.onerror=()=>{keyConfigNotice='保存に失敗しました（通信を確認してください）'};
+    setTimeout(()=>{try{sock.close()}catch(_){}},4000);
+  }).catch(()=>{keyConfigNotice='ログイン情報を確認できませんでした'});
+}
+function requestKeyConfigLoad(){
+  const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
+  const user=auth&&auth.currentUser;
+  if(!user){
+    if(auth){const provider=new firebase.auth.GoogleAuthProvider();auth.signInWithPopup(provider).then(()=>requestKeyConfigLoad()).catch(()=>{keyConfigNotice='Googleログインできませんでした。オンライン対戦からログインしてください';});}else keyConfigNotice='Firebase設定が必要です';
+    keyConfigNotice='Googleログイン画面を開いています...';return;
+  }
+  user.getIdToken().then(token=>{
+    const sock=new WebSocket(ONLINE_SERVER_URL);
+    sock.onopen=()=>sock.send(JSON.stringify({type:'keyConfigGet',idToken:token,uid:user.uid}));
+    sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='keyConfig'){if(m.keyConfig&&typeof m.keyConfig==='object')keyConfig={...keyConfigDefaults,...m.keyConfig};keyConfigNotice=m.keyConfig?'アカウントのキー設定を読み込みました':'保存済み設定はありません';}}catch(_){}};
+    setTimeout(()=>{try{sock.close()}catch(_){}},4000);
+  }).catch(()=>{});
+}
+function drawKeyConfigOverlay(){
+  push(); rectMode(CORNER); noStroke(); fill(8,10,24,245); rect(90,65,width-180,height-130,18);
+  stroke(110,190,255); strokeWeight(2); noFill(); rect(90,65,width-180,height-130,18);
+  noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(30); text('キーコンフィグ',width/2,103);
+  textSize(14); fill(205); text('変更したい操作を押してから、割り当てたいキーを押してください',width/2,135);
+  const startY=174, rowH=48;
+  keyConfigActions.forEach((a,i)=>{const y=startY+i*rowH; fill(keyCaptureAction===a[0]?'#385b83':'#202943'); rect(180,y,740,38,7); fill(255); textAlign(LEFT,CENTER); textSize(18); text(a[1],205,y+19); textAlign(RIGHT,CENTER); fill(keyCaptureAction===a[0]?'#ffe082':'#9fe7ff'); text(keyCaptureAction===a[0]?'キーを押してください':keyCodeLabel(keyConfig[a[0]]),895,y+19);});
+  const by=startY+keyConfigActions.length*rowH+8; fill(55,70,105); rect(180,by,210,42,8); rect(410,by,210,42,8); rect(640,by,280,42,8); fill(255); textAlign(CENTER,CENTER); textSize(16); text('初期設定に戻す',285,by+21); text('アカウントに保存',515,by+21); text('閉じる',780,by+21);
+  fill(255,220,120); textSize(14); text(keyConfigNotice,width/2,by+63); pop();
+}
+function handleKeyConfigPointer(px,py){
+  if(!keyConfigOpen)return false;
+  const startY=174,rowH=48;
+  for(let i=0;i<keyConfigActions.length;i++){const y=startY+i*rowH;if(px>=180&&px<=920&&py>=y&&py<=y+38){keyCaptureAction=keyConfigActions[i][0];keyConfigNotice='割り当てるキーを押してください';return true;}}
+  const by=startY+keyConfigActions.length*rowH+8;
+  if(py>=by&&py<=by+42){if(px>=180&&px<=390){keyConfig={...keyConfigDefaults};keyCaptureAction='';keyConfigNotice='初期設定に戻しました';}
+    else if(px>=410&&px<=620){requestKeyConfigSave();}
+    else if(px>=640&&px<=920){keyConfigOpen=false;keyCaptureAction='';}
+    return true;}
+  return true;
+}
+window.addEventListener('keydown',function(e){
+  if(keyConfigOpen){e.preventDefault();e.stopPropagation();if(!keyCaptureAction){if(e.code==='Escape'){keyConfigOpen=false;}return;}if(['Escape','Tab','CapsLock'].includes(e.code)){keyCaptureAction='';keyConfigNotice='キー変更をキャンセルしました';return;}if(isBoundKey(e.code)&&keyConfig[keyCaptureAction]!==e.code){keyConfigNotice='そのキーは別の操作に設定済みです';return;}keyConfig[keyCaptureAction]=e.code;keyCaptureAction='';keyConfigNotice='キーを変更しました。保存ボタンを押してください';return;}
+},{capture:true});
+
 
 // --- プレイヤー (P1) の状態 ---
 var gameBoard = []; // P1 ゲームボード
@@ -671,7 +731,7 @@ function draw() {
       }
       // P2: 自然落下
       else if (!isLandedP2 && frameCount % framesPerDrop === 0) {
-          if (gameMode === 'ONLINE' ? !onlineGuestKeyState.down : !keyIsDown(83)) {
+          if (gameMode === 'ONLINE' ? !onlineGuestKeyState.down : !keyIsDown(keyCodeNumber(keyConfig.down))) {
                moveDown(2);
           }
       }
@@ -1152,12 +1212,13 @@ function drawTitleScreen() {
         text('ホストだけが押せます', width / 2, by + bh + 16);
     }
 
-    // ホーム画面右上のGoogleログインボタン
-    const loggedInUser = window.tetrisFirebaseAuth && window.tetrisFirebaseAuth.currentUser;
-    stroke(220); strokeWeight(2); fill(loggedInUser ? 35 : 40, loggedInUser ? 105 : 40, loggedInUser ? 75 : 75);
-    rect(width - 292, 18, 157, 42, 8);
-    noStroke(); fill(255); textSize(16); textAlign(CENTER, CENTER);
-    text(loggedInUser ? '✓ ログイン済み' : 'Googleログイン', width - 213.5, 39);
+    if (onlineProfile && onlineProfile.rating !== undefined) {
+      noStroke(); fill(220); textSize(14); textAlign(LEFT, TOP);
+      text(`Google: ${onlineProfile.displayName || 'ログイン中'}  レート ${onlineProfile.rating}  勝 ${onlineProfile.wins || 0} 敗 ${onlineProfile.losses || 0}`, 18, 18);
+    }
+
+    // ホーム画面右上のキー設定ボタン
+    stroke(220); strokeWeight(2); fill(40, 40, 75); rect(width - 260, 18, 125, 42, 8); noStroke(); fill(255); textSize(17); textAlign(CENTER, CENTER); text('キー設定', width - 197, 39);
 
     // ホーム画面右上のヘルプボタン
     stroke(220); strokeWeight(2); fill(40, 40, 75);
@@ -1166,6 +1227,7 @@ function drawTitleScreen() {
     text('？ ヘルプ', width - 72, 39);
 
     if (helpOpen) drawHelpOverlay();
+    if (keyConfigOpen) drawKeyConfigOverlay();
 }
 // ▲▲▲
 
@@ -1425,8 +1487,8 @@ function handlePlayerInput() {
         let now = millis();
        
         // --- 左右移動 (キーボード WASD OR コントローラー) ---
-        let isLeftPressed = (axisX < -0.5 || dpadLeft || keyIsDown(65)); // P1: A
-        let isRightPressed = (axisX > 0.5 || dpadRight || keyIsDown(68)); // P1: D
+        let isLeftPressed = (axisX < -0.5 || dpadLeft || keyIsDown(keyCodeNumber(keyConfig.left))); // P1: A
+        let isRightPressed = (axisX > 0.5 || dpadRight || keyIsDown(keyCodeNumber(keyConfig.right))); // P1: D
 
         if (isLeftPressed) {
             if (dasStartTimeLeft === 0) {
@@ -1459,7 +1521,7 @@ function handlePlayerInput() {
         }
        
         // --- 下移動 (キーボード S OR コントローラー) ---
-        if (axisY > 0.5 || dpadDown || keyIsDown(83)) { // P1: S
+        if (axisY > 0.5 || dpadDown || keyIsDown(keyCodeNumber(keyConfig.down))) { // P1: S
             if (now - lastMoveDownTime > moveDownDelay) {
                 moveDown(1); 
                 lastMoveDownTime = now;
@@ -1608,6 +1670,7 @@ function handlePlayer2Input() {
 function handleTitlePointer(px, py) {
   if (gameMode !== 'TITLE') return false;
 
+  if (keyConfigOpen) return handleKeyConfigPointer(px,py);
   // ヘルプを開閉。表示中は背後のゲームモードを選択させない。
   if (helpOpen) {
     const panelW = Math.min(760, width - 40), panelH = Math.min(620, height - 40);
@@ -1615,17 +1678,8 @@ function handleTitlePointer(px, py) {
     if ((px >= x + panelW - 150 && px <= x + panelW - 10 && py >= y + panelH - 65 && py <= y + panelH - 5) || px < x || px > x + panelW || py < y || py > y + panelH) helpOpen = false;
     return true;
   }
+  if (px >= width - 270 && px <= width - 135 && py >= 12 && py <= 65) { keyConfigOpen=true; keyConfigNotice=''; requestKeyConfigLoad(); return true; }
   if (px >= width - 130 && px <= width - 15 && py >= 12 && py <= 65) { helpOpen = true; return true; }
-  if (px >= width - 300 && px <= width - 135 && py >= 12 && py <= 65) {
-    ensureGoogleLogin().then(user => {
-      if (user) {
-        onlineFirebaseUser = user;
-        onlinePlayerName = (user.displayName || 'プレイヤー').trim().slice(0, 16);
-        onlineStatus = 'Googleログイン済み：' + onlinePlayerName;
-      }
-    });
-    return true;
-  }
 
   // オンラインのホストは、人数がそろったらSTARTボタンを押して開始する。
   const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
@@ -2143,104 +2197,85 @@ function addGarbageLines(board, count, currentBurokku, playerIndex) {
 // ==========================================================
 // --- ONLINE BATTLE / WebSocket ---
 // ==========================================================
-async function ensureGoogleLogin() {
-  if (!window.tetrisFirebaseAuth) {
-    alert('Firebase設定が読み込まれていません。firebase-config.jsを確認してください。');
-    return null;
-  }
-  try {
-    let user = window.tetrisFirebaseAuth.currentUser;
-    if (!user) {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      const result = await window.tetrisFirebaseAuth.signInWithPopup(provider);
-      user = result.user;
-    }
-    onlineFirebaseUser = user;
-    return user;
-  } catch (e) {
-    alert('Googleログインに失敗しました。Firebaseの承認済みドメインとGoogleログイン設定を確認してください。\n' + (e.message || ''));
-    return null;
-  }
-}
-
-async function startQueueMatch(mode) {
-  const user = await ensureGoogleLogin();
-  if (!user) return;
-  onlineQueueMode = mode;
-  onlinePlayerName = (user.displayName || 'プレイヤー').trim().slice(0,16);
-  onlineRole = 0;
-  onlineRoom = '';
-  onlineStatus = mode === 'ranked' ? 'ランク対戦の相手を探しています...' : 'フリーマッチの相手を探しています...';
-  connectOnlineSocket('queue');
-}
-
-async function showOnlineProfile() {
-  const user = await ensureGoogleLogin();
-  if (!user) return;
-  onlineFirebaseUser = user;
-  onlineQueueMode = 'profile';
-  onlinePlayerName = (user.displayName || 'プレイヤー').trim().slice(0,16);
-  connectOnlineSocket('profileRequest');
-  setTimeout(() => {
-    if (!onlineProfile) {
-      alert('プロフィールを取得できませんでした。サーバー設定と接続を確認してください。');
-      return;
-    }
-    const top = onlineLeaderboard.slice(0,10).map((p,i)=>`${i+1}. ${p.name}  レート${p.rating}  ${p.wins}勝${p.losses}敗`).join('\n');
-    alert(`あなたの記録\n名前：${onlineProfile.name}\nレート：${onlineProfile.rating}\n戦績：${onlineProfile.wins}勝 ${onlineProfile.losses}敗\n\nランキング TOP10\n${top || 'まだ記録がありません'}`);
-    if (onlineSocket && onlineSocket.readyState === WebSocket.OPEN) onlineSocket.close();
-    onlineSocket = null;
-  }, 1800);
-}
-
 function makeOnlinePassword() {
   return String(floor(100000 + random(900000))).padStart(6, '0');
 }
 
-function startOnlineMenu() {
+async function startOnlineMenu() {
   if (onlineSocket && onlineSocket.readyState === WebSocket.OPEN) {
     onlineStatus = 'すでにオンライン接続中です';
     return;
   }
+
   const mode = prompt(
-    'オンライン対戦\n\n' +
-    '1：ランクマッチ（Googleログイン必須・レート変動）\n' +
-    '2：フリーマッチ（Googleログイン必須・レート変動なし）\n' +
-    '3：パスワード部屋（2〜4人）\n' +
-    '4：プロフィール・ランキング'
+    'オンライン対戦を選んでください。\n\n' +
+    '1：ランク対戦（Googleログイン必須）\n' +
+    '2：フリーマッチ（レート変動なし）\n' +
+    '3：パスワード対戦（従来方式）', '1'
   );
   if (mode === null) return;
-  if (mode.trim() === '1') { startQueueMatch('ranked'); return; }
-  if (mode.trim() === '2') { startQueueMatch('free'); return; }
-  if (mode.trim() === '4') { showOnlineProfile(); return; }
+
+  let playerName = prompt('オンラインで表示するプレイヤーネームを入力してください。', onlineProfile?.displayName || 'プレイヤー');
+  if (playerName === null) return;
+  playerName = playerName.trim().replace(/[<>]/g, '').slice(0,16);
+  if (!playerName) { alert('プレイヤーネームを入力してください。'); return; }
+  onlinePlayerName = playerName;
+
+  if (mode.trim() === '1') {
+    if (!window.firebase || !window.firebase.apps || !window.firebase.apps.length) {
+      alert('Firebaseの設定がまだ完了していません。firebase-config.js を設定してください。');
+      return;
+    }
+    try {
+      const auth = firebase.auth();
+      if (!auth.currentUser) {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await auth.signInWithPopup(provider);
+      }
+      onlineUser = auth.currentUser;
+      onlineIdToken = await onlineUser.getIdToken(true);
+      onlineProfile = { uid: onlineUser.uid, displayName: onlineUser.displayName || playerName, email: onlineUser.email || '' };
+    } catch (e) {
+      alert('Googleログインに失敗しました。Firebaseの承認済みドメインと設定を確認してください。');
+      return;
+    }
+    onlineQueueMode = 'ranked';
+    onlinePlayerCount = 2; onlineRole = 0; onlineRoom = ''; onlineStatus = 'ランク対戦の相手を探しています...';
+    connectOnlineSocket('queue');
+    return;
+  }
+  if (mode.trim() === '2') {
+    onlineQueueMode = 'free'; onlinePlayerCount = 2; onlineRole = 0; onlineRoom = ''; onlineStatus = 'フリーマッチの相手を探しています...';
+    connectOnlineSocket('queue');
+    return;
+  }
   if (mode.trim() === '3') {
-    let playerName = prompt('オンラインで表示するプレイヤーネームを入力してください。', 'プレイヤー');
-    if (playerName === null) return;
-    playerName = playerName.trim().replace(/[<>]/g, '');
-    if (!playerName) { alert('プレイヤーネームを入力してください。'); return; }
-    if (playerName.length > 16) playerName = playerName.slice(0,16);
-    onlinePlayerName = playerName;
-    const roomMode = prompt('パスワード対戦\n\n1：部屋を作る\n2：相手の部屋に入る');
+    onlineQueueMode = 'password';
+    const roomMode = prompt('パスワード対戦\n\n1：部屋を作る（ホスト）\n2：相手の部屋に入る（ゲスト）', '1');
     if (roomMode === null) return;
     if (roomMode.trim() === '1') {
-      let count = prompt('何人対戦にしますか？ 2 / 3 / 4', '4');
+      let count = prompt('何人対戦にしますか？\n\n2 / 3 / 4 のいずれかを入力してください。', '2');
       if (count === null) return;
       count = Number(count.trim());
       if (![2,3,4].includes(count)) { alert('人数は2、3、4のいずれかです。'); return; }
-      onlinePlayerCount = count; onlineRole = 0; onlineRoom = makeOnlinePassword(); onlineStatus = '部屋を作成中...'; connectOnlineSocket('create'); return;
+      onlinePlayerCount = count; onlineRole = 0; onlineRoom = makeOnlinePassword(); onlineStatus = '部屋を作成中...';
+      connectOnlineSocket('create'); return;
     }
     if (roomMode.trim() === '2') {
       let password = prompt('ホストから教えてもらった6桁のパスワードを入力してください。');
-      if (password === null) return; password = password.trim();
+      if (password === null) return;
+      password = password.trim();
       if (!/^\d{6}$/.test(password)) { alert('パスワードは6桁の数字です。'); return; }
-      let count = prompt('この部屋は何人対戦ですか？ 2 / 3 / 4', '3');
-      if (count === null) return; count = Number(count.trim());
+      let count = prompt('この部屋は何人対戦ですか？\n\n2 / 3 / 4', '2');
+      if (count === null) return;
+      count = Number(count.trim());
       if (![2,3,4].includes(count)) { alert('人数は2、3、4のいずれかです。'); return; }
-      onlineRole = 0; onlinePlayerCount = count; onlineRoom = password; onlineStatus = '部屋に参加中...'; connectOnlineSocket('join'); return;
+      onlineRole = 0; onlinePlayerCount = count; onlineRoom = password; onlineStatus = '部屋に参加中...';
+      connectOnlineSocket('join'); return;
     }
     alert('1 または 2 を入力してください。'); return;
   }
-  alert('1〜4のいずれかを入力してください。');
+  alert('1、2、3のいずれかを入力してください。');
 }
 
 function connectOnlineSocket(action) {
@@ -2254,43 +2289,20 @@ function connectOnlineSocket(action) {
   onlineSocket.onopen = () => {
     onlineConnected = true;
     onlineStatus = action === 'create' ? '部屋を作成中...' : 'パスワードを確認中...';
-    if (action === 'queue' || action === 'profileRequest') {
-      const user = onlineFirebaseUser || (window.tetrisFirebaseAuth && window.tetrisFirebaseAuth.currentUser);
-      if (!user) { onlineStatus = 'Googleログインが必要です'; return; }
-      user.getIdToken(true).then(idToken => {
-        if (!onlineSocket || onlineSocket.readyState !== WebSocket.OPEN) return;
-        onlineSocket.send(JSON.stringify({
-          type: action,
-          mode: onlineQueueMode,
-          idToken,
-          uid: user.uid,
-          name: onlinePlayerName || user.displayName || 'プレイヤー'
-        }));
-      }).catch(() => { onlineStatus = 'Googleログインの確認に失敗しました'; alert(onlineStatus); });
-    } else {
-      onlineSocket.send(JSON.stringify({
-        type: action,
-        password: onlineRoom,
-        playerCount: onlinePlayerCount,
-        name: onlinePlayerName
-      }));
-    }
+    onlineSocket.send(JSON.stringify({
+      type: action,
+      mode: onlineQueueMode,
+      idToken: onlineIdToken,
+      uid: onlineProfile?.uid || '',
+      password: onlineRoom,
+      playerCount: onlinePlayerCount,
+      name: onlinePlayerName
+    }));
   };
 
   onlineSocket.onmessage = (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch (e) { return; }
-
-    if (msg.type === 'profile') {
-      onlineProfile = msg.profile || null;
-      if (onlineProfile) onlineStatus = `レート ${onlineProfile.rating} / ${onlineProfile.wins}勝${onlineProfile.losses}敗`;
-      return;
-    }
-
-    if (msg.type === 'leaderboard') {
-      onlineLeaderboard = Array.isArray(msg.entries) ? msg.entries : [];
-      return;
-    }
 
     if (msg.type === 'queueStatus') {
       onlineStatus = msg.message || '対戦相手を探しています...';
@@ -2299,15 +2311,26 @@ function connectOnlineSocket(action) {
 
     if (msg.type === 'queueMatched') {
       onlineQueueMode = msg.mode || onlineQueueMode;
-      onlinePlayerCount = 2;
       onlineRole = Number(msg.role) || 1;
-      onlineRoom = '';
+      onlinePlayerCount = 2;
+      onlineRoom = String(msg.room || '');
       onlineJoinedCount = 2;
-      onlineMatchStarted = false;
       onlinePlayerNames = msg.names || {};
       onlineScores = msg.scores || {};
-      onlineStatus = onlineQueueMode === 'ranked' ? 'ランクマッチ成立！' : 'フリーマッチ成立！';
-      beginOnlineMatchLocal();
+      onlineMatchStartRequested = true;
+      onlineStatus = msg.mode === 'ranked' ? 'ランク対戦が見つかりました！' : '対戦相手が見つかりました！';
+      return;
+    }
+
+    if (msg.type === 'profile') {
+      onlineProfile = { ...(onlineProfile || {}), ...msg.profile };
+      onlineStatus = `レート ${msg.profile.rating} / 勝 ${msg.profile.wins} 敗 ${msg.profile.losses}`;
+      return;
+    }
+
+    if (msg.type === 'leaderboard') {
+      const rows = (msg.entries || []).map((e, i) => `${i+1}. ${e.name} — ${e.rating} (勝${e.wins}/敗${e.losses})`).join('\n');
+      alert('レートランキング\n\n' + (rows || 'まだランキングデータがありません。'));
       return;
     }
 
@@ -2544,9 +2567,9 @@ function handleOnlineGuestInput() {
     onlineSocket.send(JSON.stringify({
       type:'inputState',
       state: {
-        left:!!onlineGuestKeyState.left || keyIsDown(65),
-        right:!!onlineGuestKeyState.right || keyIsDown(68),
-        down:!!onlineGuestKeyState.down || keyIsDown(83)
+        left:!!onlineGuestKeyState.left || keyIsDown(keyCodeNumber(keyConfig.left)),
+        right:!!onlineGuestKeyState.right || keyIsDown(keyCodeNumber(keyConfig.right)),
+        down:!!onlineGuestKeyState.down || keyIsDown(keyCodeNumber(keyConfig.down))
       }
     }));
   } catch (e) {}
@@ -2846,23 +2869,23 @@ function keyPressed() {
     // 通常のオンライン操作は下のwindow.keydownだけで処理する。
     // p5.jsのkeyPressedも同時に実行すると、W等が二重発火するためここでは止める。
     return false;
-    if (key === 'a' || key === 'A') {
+    if (keyCode === keyCodeNumber(keyConfig.left)) {
       const now = millis();
       moveLeft(1); dasStartTimeLeft = now; arrTimeLeft = now;
     }
-    else if (key === 'd' || key === 'D') {
+    else if (keyCode === keyCodeNumber(keyConfig.right)) {
       const now = millis();
       moveRight(1); dasStartTimeRight = now; arrTimeRight = now;
     }
-    else if (key === 's' || key === 'S') {
+    else if (keyCode === keyCodeNumber(keyConfig.down)) {
       moveDown(1); lastMoveDownTime = millis();
     }
-    else if (key === 'w' || key === 'W') hardDrop(1);
-    else if (keyCode === LEFT_ARROW) rotateRight(1);
-    else if (keyCode === RIGHT_ARROW) rotateLeft(1);
-    else if (keyCode === UP_ARROW) rotateLeft(1);
-    else if (keyCode === DOWN_ARROW) rotateRight(1);
-    else if (key === 'c' || key === 'C') horudoSuru(1);
+    else if (keyCode === keyCodeNumber(keyConfig.hardDrop)) hardDrop(1);
+    else if (keyCode === keyCodeNumber(keyConfig.rotateLeft)) rotateLeft(1);
+    else if (keyCode === keyCodeNumber(keyConfig.rotateRight)) rotateRight(1);
+    else if (keyCode === UP_ARROW && keyConfig.rotateLeft === 'ArrowUp') rotateLeft(1);
+    else if (keyCode === DOWN_ARROW && keyConfig.rotateRight === 'ArrowDown') rotateRight(1);
+    else if (keyCode === keyCodeNumber(keyConfig.hold)) horudoSuru(1);
     else if (key === 'p' || key === 'P') {
       if (countdownTime === 0) isPaused = !isPaused;
     }
@@ -2912,26 +2935,12 @@ function keyPressed() {
     return;
   }
 
-  // --- P1 ゲーム中の操作 ---
-  // P1: WASD移動（Wはハードドロップ）、E/Q/Cホールド、F/G回転。
-  // それ以外のモードでは従来どおり Space/矢印/C も使用可能。
-  if (gameMode === 'VS_LOCAL') {
-    if (key === 'w' || key === 'W') { hardDrop(1); return false; }
-    if (key === 'e' || key === 'E' || key === 'q' || key === 'Q' || key === 'c' || key === 'C') horudoSuru(1);
-    else if (key === 'f' || key === 'F') rotateRight(1);
-    else if (key === 'g' || key === 'G') rotateLeft(1);
-  } else {
-    if (key === 'w' || key === 'W' || key === ' ') {
-      hardDrop(1);
-      return false;
-    }
-    if (keyCode === LEFT_ARROW) rotateRight(1);
-    else if (keyCode === RIGHT_ARROW) rotateLeft(1);
-    else if (keyCode === UP_ARROW) rotateLeft(1);
-    else if (keyCode === DOWN_ARROW) rotateRight(1);
-    else if (key === 'c' || key === 'C') horudoSuru(1);
-  }
-  
+  // --- P1 ゲーム中の操作（キー設定に従う） ---
+  if (keyCode === keyCodeNumber(keyConfig.hardDrop)) { hardDrop(1); return false; }
+  if (keyCode === keyCodeNumber(keyConfig.rotateLeft)) { rotateLeft(1); return false; }
+  if (keyCode === keyCodeNumber(keyConfig.rotateRight)) { rotateRight(1); return false; }
+  if (keyCode === keyCodeNumber(keyConfig.hold)) { horudoSuru(1); return false; }
+
   // --- P2 ゲーム中の操作 (VS_LOCAL のみ) ---
   if (gameMode === 'VS_LOCAL') {
       if (key === 'u' || key === 'U' || key === 'o' || key === 'O' || key === '>') { // P2 ホールド
@@ -3647,7 +3656,7 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
   window.addEventListener('keydown',e=>{
     if(!active()) return;
     const c=e.code;
-    const isControlKey=['KeyA','KeyD','KeyS','KeyW','Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyC'].includes(c);
+    const isControlKey=keyConfigActions.some(a=>keyConfig[a[0]]===c)||c==='Space'||['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(c);
     if(isControlKey) e.preventDefault();
 
     // ラウンド終了：指定された操作のいずれかで全員の次ラウンド開始を要求。
@@ -3666,20 +3675,18 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
     }
 
     if(isPaused||countdownTime>0||!isStarted) return;
-    if(c==='KeyA') onlineGuestKeyState.left=true;
-    else if(c==='KeyD') onlineGuestKeyState.right=true;
-    else if(c==='KeyS') onlineGuestKeyState.down=true;
-    else if((c==='KeyW'||c==='Space')&&!e.repeat){ hardDrop(1); sendOnlineAction('hardDrop'); }
-    else if(c==='ArrowLeft'&&!e.repeat){ rotateRight(1); sendOnlineAction('rotateRight'); }
-    else if(c==='ArrowRight'&&!e.repeat){ rotateLeft(1); sendOnlineAction('rotateLeft'); }
-    else if(c==='ArrowUp'&&!e.repeat){ rotateLeft(1); sendOnlineAction('rotateLeft'); }
-    else if(c==='ArrowDown'&&!e.repeat){ rotateRight(1); sendOnlineAction('rotateRight'); }
-    else if(c==='KeyC'&&!e.repeat){ horudoSuru(1); sendOnlineAction('hold'); }
+    if(c===keyConfig.left) onlineGuestKeyState.left=true;
+    else if(c===keyConfig.right) onlineGuestKeyState.right=true;
+    else if(c===keyConfig.down) onlineGuestKeyState.down=true;
+    else if(c===keyConfig.hardDrop&&!e.repeat){ hardDrop(1); sendOnlineAction('hardDrop'); }
+    else if(c===keyConfig.rotateLeft&&!e.repeat){ rotateLeft(1); sendOnlineAction('rotateLeft'); }
+    else if(c===keyConfig.rotateRight&&!e.repeat){ rotateRight(1); sendOnlineAction('rotateRight'); }
+    else if(c===keyConfig.hold&&!e.repeat){ horudoSuru(1); sendOnlineAction('hold'); }
   },{passive:false});
   window.addEventListener('keyup',e=>{
-    if(e.code==='KeyA') onlineGuestKeyState.left=false;
-    if(e.code==='KeyD') onlineGuestKeyState.right=false;
-    if(e.code==='KeyS') onlineGuestKeyState.down=false;
+    if(e.code===keyConfig.left) onlineGuestKeyState.left=false;
+    if(e.code===keyConfig.right) onlineGuestKeyState.right=false;
+    if(e.code===keyConfig.down) onlineGuestKeyState.down=false;
   });
   window.addEventListener('blur',()=>{onlineGuestKeyState.left=false;onlineGuestKeyState.right=false;onlineGuestKeyState.down=false;});
 })();
