@@ -412,6 +412,44 @@ const I_KICK_DATA = [
   [[ 0, 0], [-1, 0], [ 2, 0], [-1, 2], [ 2,-1]],
 ];
 
+
+// --- Joy-Con診断パネル（調査用・ゲームロジックは変更しない） ---
+var joyconDebugPanel = null;
+var joyconDebugTimerStarted = false;
+function startJoyconDebugPanel() {
+  if (joyconDebugTimerStarted || !document.body) return;
+  joyconDebugTimerStarted = true;
+  const panel = document.createElement('div');
+  joyconDebugPanel = panel;
+  panel.id = 'joycon-debug-panel';
+  panel.style.cssText = 'position:fixed;z-index:2147483647;top:8px;right:8px;width:min(420px,48vw);max-height:45vh;overflow:auto;background:rgba(0,0,0,.88);color:#b8ffb8;border:2px solid #55cc77;border-radius:8px;padding:8px;font:12px/1.4 monospace;white-space:pre-wrap;pointer-events:auto;';
+  const close = document.createElement('button');
+  close.textContent = '診断パネルを閉じる';
+  close.style.cssText = 'display:block;margin-bottom:6px;font-size:12px;';
+  close.onclick = () => { panel.remove(); joyconDebugPanel = null; };
+  panel.appendChild(close);
+  const output = document.createElement('div');
+  output.textContent = 'Gamepadを確認中...';
+  panel.appendChild(output);
+  document.body.appendChild(panel);
+  const update = () => {
+    if (!joyconDebugPanel || !joyconDebugPanel.isConnected) return;
+    let pads = [];
+    try { pads = navigator.getGamepads ? Array.from(navigator.getGamepads() || []) : []; } catch (e) {}
+    const connected = pads.map((p, slot) => p ? {p, slot} : null).filter(x => x && x.p.connected !== false);
+    if (!connected.length) { output.textContent = 'Gamepad API: 利用可能=' + !!navigator.getGamepads + '\n接続中のGamepadなし\nJoy-Conを接続してボタンを押してください'; return; }
+    output.textContent = connected.map(({p, slot}) => {
+      const pressed = [];
+      const buttons = Array.from(p.buttons || []);
+      buttons.forEach((b, i) => { if (b && (b.pressed || Number(b.value) > 0.15)) pressed.push(i + ':' + (Number(b.value).toFixed(2)) + (b.pressed ? '*' : '')); });
+      const axes = Array.from(p.axes || []).map((v, i) => i + ':' + Number(v).toFixed(2)).join('  ') || '(なし)';
+      return 'slot=' + slot + ' / index=' + p.index + '\nID: ' + p.id + '\nbuttons=' + buttons.length + ' / axes=' + (p.axes || []).length + '\n押されているボタン: ' + (pressed.join(', ') || '(なし)') + '\naxes: ' + axes;
+    }).join('\n\n--------------------\n\n') + '\n\n※ボタンを押した瞬間に番号が表示されるか確認してください。';
+  };
+  update();
+  setInterval(update, 100);
+}
+
 function setup() {
   // ▼▼▼ 修正点 2 (テトリス25): キャンバスサイズを変更 (36 * 22 = 792) ▼▼▼
   const canvas = createCanvas(1100, 810);
@@ -547,6 +585,7 @@ function setup() {
   titleButtons.push({ y: 560, text: 'ONLINE BATTLE', mode: 'ONLINE' });
 
   restartGame();
+  startJoyconDebugPanel();
 }
 
 // ▼▼▼ 修正点 3 (テトリス25): draw() の translate() を修正 ▼▼▼
