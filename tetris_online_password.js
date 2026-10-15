@@ -1349,40 +1349,43 @@ function drawTitleScreen() {
 function drawHelpOverlay() {
     push();
     noStroke(); fill(0, 0, 0, 205); rect(0, 0, width, height);
-    const panelW = Math.min(760, width - 40), panelH = Math.min(620, height - 40);
+    const panelW = Math.min(820, width - 32), panelH = Math.min(700, height - 24);
     const x = (width - panelW) / 2, y = (height - panelH) / 2;
     stroke(210); strokeWeight(2); fill(24, 24, 43); rect(x, y, panelW, panelH, 14);
-    noStroke(); fill(255); textAlign(CENTER, CENTER); textSize(30); text('操作ヘルプ', width / 2, y + 36);
-    textAlign(LEFT, TOP); textSize(17);
+    noStroke(); fill(255); textAlign(CENTER, CENTER); textSize(28); text('操作ヘルプ', width / 2, y + 32);
+    textAlign(LEFT, TOP); textSize(15);
     const lines = [
-      '■ 1P SOLO（1人プレイ）',
-      'A / D：左右移動　　S：下移動　　W または Space：ハードドロップ',
-      '↑ / ↓ / ← / →：回転　　C：ホールド',
+      '■ ゲーム操作',
+      '1P SOLO / 1P vs CPU：A・D＝左右移動、S＝下移動、W または Space＝ハードドロップ',
+      '回転＝矢印キー、ホールド＝C、P＝一時停止／再開',
       '',
-      '■ 1P vs CPU（CPU対戦）',
-      '移動：A / D / S　　W または Space：ハードドロップ',
-      '回転：矢印キー　　C：ホールド',
-      '',
-      '■ 1P vs 2P（ローカル対戦）',
-      '1P：A / D / S 移動、W ハードドロップ、E / Q / C ホールド、F / G 回転',
-      '2P：J / L / K 移動、I ハードドロップ、U / O / > ホールド、矢印キー 回転',
+      '■ 1P vs 2P（同じ端末で対戦）',
+      '1P：A・D・S＝移動、W＝ハードドロップ、E・Q・C＝ホールド、F・G＝回転',
+      '2P：J・L・K＝移動、I＝ハードドロップ、U・O・>＝ホールド、矢印キー＝回転',
       '',
       '■ ONLINE BATTLE（オンライン対戦）',
-      '1Pと同じ基本操作：A / D / S 移動、W または Space ハードドロップ、',
-      '矢印キーで回転、Cでホールド。画面の案内に従ってルームに参加してください。',
+      'ランク対戦：相手と自動マッチング。勝つとレートが上がり、負けると下がります。',
+      'フリー対戦：相手と自動マッチング。ランクレートを競うモードではありません。',
+      'パスワード対戦：ルームを作成し、同じルームコードを相手に伝えて参加してもらいます。',
+      'オンライン画面の表示と案内に従って、マッチングまたはルーム参加を進めてください。',
       '',
-      '共通：Pキーで一時停止／再開。',
-      '閉じるには右上の「閉じる」または Esc キーを押してください。'
+      '■ ランキング・プロフィール',
+      'ランキング：レート順の上位プレイヤーを表示します。ログイン中は自分の順位も確認できます。',
+      '上位50位より下の場合も、自分の順位・レートが別枠で表示されます。',
+      'プロフィール：表示名や戦績を確認できます。キーコンフィグで操作キーを変更できます。',
+      '',
+      '閉じる：右下の「閉じる」を押すか、Esc キーを押してください。'
     ];
-    let yy = y + 70;
-    const lineH = panelH > 540 ? 25 : 22;
+    let yy = y + 58;
+    const lineH = Math.max(17, Math.min(21, (panelH - 112) / lines.length));
     for (const line of lines) {
-      if (yy > y + panelH - 55) break;
-      text(line, x + 24, yy, panelW - 48, lineH + 2);
+      if (yy + lineH > y + panelH - 42) break;
+      if (line.startsWith('■')) { fill(255, 220, 120); } else { fill(240); }
+      text(line, x + 20, yy, panelW - 40, lineH + 2);
       yy += lineH;
     }
-    stroke(220); fill(55, 55, 90); rect(x + panelW - 125, y + panelH - 48, 105, 32, 7);
-    noStroke(); fill(255); textAlign(CENTER, CENTER); textSize(16); text('閉じる', x + panelW - 72, y + panelH - 32);
+    stroke(220); fill(55, 55, 90); rect(x + panelW - 125, y + panelH - 36, 105, 26, 7);
+    noStroke(); fill(255); textAlign(CENTER, CENTER); textSize(14); text('閉じる', x + panelW - 72, y + panelH - 23);
     pop();
 }
 
