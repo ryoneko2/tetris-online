@@ -69,6 +69,8 @@ var selectedButtonIndex = 0;
 var helpOpen = false;
 // アカウント連携キーコンフィグ（P1/オンライン共通）
 var keyConfigOpen = false;
+var profileTab = 'profile';
+var profileNotice = '';
 var keyCaptureAction = '';
 var keyConfigNotice = '';
 var keyConfig = { left:'KeyA', right:'KeyD', down:'KeyS', hardDrop:'KeyW', rotateLeft:'KeyG', rotateRight:'KeyF', hold:'KeyC' };
@@ -103,27 +105,81 @@ function requestKeyConfigLoad(){
     setTimeout(()=>{try{sock.close()}catch(_){}},4000);
   }).catch(()=>{});
 }
+
+function profileSocketRequest(payload, onMessage){
+  const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
+  const user=auth&&auth.currentUser;
+  if(!user){profileNotice='Googleログインしてください';return;}
+  user.getIdToken().then(token=>{
+    const sock=new WebSocket(ONLINE_SERVER_URL);
+    sock.onopen=()=>sock.send(JSON.stringify({...payload,idToken:token,uid:user.uid}));
+    sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='error'){profileNotice=m.message||'通信エラー';return;}onMessage&&onMessage(m);}catch(_){}};
+    sock.onerror=()=>{profileNotice='サーバーに接続できませんでした'};
+    setTimeout(()=>{try{sock.close()}catch(_){}},5000);
+  }).catch(()=>{profileNotice='ログイン情報を確認できませんでした'});
+}
+function requestProfileLoad(){
+  const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
+  if(!auth){profileNotice='Firebase設定が必要です';return;}
+  if(!auth.currentUser){profileNotice='Googleログイン画面を開いています...';auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).then(requestProfileLoad).catch(()=>{profileNotice='Googleログインに失敗しました';});return;}
+  profileSocketRequest({type:'profileRequest'},m=>{if(m.type==='profile'){onlineProfile={...(onlineProfile||{}),...m.profile,displayName:m.profile.name||onlineProfile?.displayName};profileNotice='プロフィールを読み込みました';}});
+}
+function saveProfileName(){
+  const current=onlineProfile?.name||onlineProfile?.displayName||'プレイヤー';
+  const entered=prompt('プロフィールに表示する名前を入力してください（1〜16文字）。',current);
+  if(entered===null)return;
+  const name=entered.trim().replace(/[<>]/g,'').slice(0,16);
+  if(!name){profileNotice='名前を入力してください';return;}
+  profileSocketRequest({type:'profileSave',name},m=>{if(m.type==='profileSaved'){onlineProfile={...(onlineProfile||{}),...m.profile,displayName:m.profile.name};profileNotice='名前を保存しました';}});
+}
+
 function drawKeyConfigOverlay(){
   push(); rectMode(CORNER); noStroke(); fill(8,10,24,245); rect(90,65,width-180,height-130,18);
   stroke(110,190,255); strokeWeight(2); noFill(); rect(90,65,width-180,height-130,18);
-  noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(30); text('キーコンフィグ',width/2,103);
-  textSize(14); fill(205); text('変更したい操作を押してから、割り当てたいキーを押してください',width/2,135);
-  const startY=174, rowH=48;
-  keyConfigActions.forEach((a,i)=>{const y=startY+i*rowH; fill(keyCaptureAction===a[0]?'#385b83':'#202943'); rect(180,y,740,38,7); fill(255); textAlign(LEFT,CENTER); textSize(18); text(a[1],205,y+19); textAlign(RIGHT,CENTER); fill(keyCaptureAction===a[0]?'#ffe082':'#9fe7ff'); text(keyCaptureAction===a[0]?'キーを押してください':keyCodeLabel(keyConfig[a[0]]),895,y+19);});
-  const by=startY+keyConfigActions.length*rowH+8; fill(55,70,105); rect(180,by,210,42,8); rect(410,by,210,42,8); rect(640,by,280,42,8); fill(255); textAlign(CENTER,CENTER); textSize(16); text('初期設定に戻す',285,by+21); text('アカウントに保存',515,by+21); text('閉じる',780,by+21);
-  fill(255,220,120); textSize(14); text(keyConfigNotice,width/2,by+63); pop();
+  noStroke(); fill(255); textAlign(CENTER,CENTER); textSize(30); text('プロフィール',width/2,103);
+  // タブはキー設定ボタンがあった同じ場所から開くプロフィール画面内に配置
+  fill(profileTab==='profile'?'#385b83':'#202943'); rect(180,125,300,42,8);
+  fill(profileTab==='keys'?'#385b83':'#202943'); rect(500,125,300,42,8);
+  fill(255); textSize(17); text('プロフィール・戦績',330,146); text('キーコンフィグ',650,146);
+  if(profileTab==='profile'){
+    const pr=onlineProfile||{};
+    textAlign(LEFT,CENTER); fill(190,220,255); textSize(15); text('プレイヤー名',205,210);
+    fill(255); textSize(26); text(pr.name||pr.displayName||'未設定',205,246);
+    fill(55,70,105); rect(700,218,190,48,8); fill(255); textAlign(CENTER,CENTER); textSize(17); text('名前を変更',795,242);
+    const stats=[['レート',pr.rating===undefined?'—':pr.rating],['勝利',pr.wins||0],['敗北',pr.losses||0],['対戦数',pr.games||0]];
+    stats.forEach((a,i)=>{const x=190+i*180;fill('#202943');rect(x,315,160,105,10);fill(175,205,240);textSize(16);text(a[0],x+80,342);fill(255);textSize(30);text(String(a[1]),x+80,383);});
+    fill(200); textSize(14); textAlign(CENTER,CENTER); text('戦績はランク対戦・フリーマッチの結果を表示します',width/2,460);
+    fill(255,220,120); text(profileNotice,width/2,520);
+    fill(55,70,105); rect(640,560,280,44,8); fill(255); textSize(17); text('プロフィールを再読み込み',780,582);
+  }else{
+    textAlign(CENTER,CENTER); textSize(13); fill(205); text('操作を選び、割り当てたいキーを押してください',width/2,183);
+    const startY=205, rowH=43;
+    keyConfigActions.forEach((a,i)=>{const y=startY+i*rowH; fill(keyCaptureAction===a[0]?'#385b83':'#202943'); rect(180,y,740,35,7); fill(255); textAlign(LEFT,CENTER); textSize(17); text(a[1],205,y+17); textAlign(RIGHT,CENTER); fill(keyCaptureAction===a[0]?'#ffe082':'#9fe7ff'); text(keyCaptureAction===a[0]?'キーを押してください':keyCodeLabel(keyConfig[a[0]]),895,y+17);});
+    const by=520; fill(55,70,105); rect(180,by,210,42,8); rect(410,by,210,42,8); fill(255); textAlign(CENTER,CENTER); textSize(16); text('初期設定に戻す',285,by+21); text('アカウントに保存',515,by+21);
+    fill(255,220,120); textSize(14); text(keyConfigNotice,width/2,by+62);
+  }
+  fill(55,70,105); rect(640,650,280,42,8); fill(255); textAlign(CENTER,CENTER); textSize(16); text('閉じる',780,671); pop();
 }
+
 function handleKeyConfigPointer(px,py){
   if(!keyConfigOpen)return false;
-  const startY=174,rowH=48;
-  for(let i=0;i<keyConfigActions.length;i++){const y=startY+i*rowH;if(px>=180&&px<=920&&py>=y&&py<=y+38){keyCaptureAction=keyConfigActions[i][0];keyConfigNotice='割り当てるキーを押してください';return true;}}
-  const by=startY+keyConfigActions.length*rowH+8;
+  if(px>=180&&px<=480&&py>=125&&py<=167){profileTab='profile';keyCaptureAction='';return true;}
+  if(px>=500&&px<=800&&py>=125&&py<=167){profileTab='keys';keyCaptureAction='';keyConfigNotice='';requestKeyConfigLoad();return true;}
+  if(px>=640&&px<=920&&py>=650&&py<=692){keyConfigOpen=false;keyCaptureAction='';return true;}
+  if(profileTab==='profile'){
+    if(px>=700&&px<=890&&py>=218&&py<=266){saveProfileName();return true;}
+    if(px>=640&&px<=920&&py>=560&&py<=604){requestProfileLoad();return true;}
+    return true;
+  }
+  const startY=205,rowH=43;
+  for(let i=0;i<keyConfigActions.length;i++){const y=startY+i*rowH;if(px>=180&&px<=920&&py>=y&&py<=y+35){keyCaptureAction=keyConfigActions[i][0];keyConfigNotice='割り当てるキーを押してください';return true;}}
+  const by=520;
   if(py>=by&&py<=by+42){if(px>=180&&px<=390){keyConfig={...keyConfigDefaults};keyCaptureAction='';keyConfigNotice='初期設定に戻しました';}
     else if(px>=410&&px<=620){requestKeyConfigSave();}
-    else if(px>=640&&px<=920){keyConfigOpen=false;keyCaptureAction='';}
     return true;}
   return true;
 }
+
 window.addEventListener('keydown',function(e){
   if(keyConfigOpen){e.preventDefault();e.stopPropagation();if(!keyCaptureAction){if(e.code==='Escape'){keyConfigOpen=false;}return;}if(['Escape','Tab','CapsLock'].includes(e.code)){keyCaptureAction='';keyConfigNotice='キー変更をキャンセルしました';return;}if(isBoundKey(e.code)&&keyConfig[keyCaptureAction]!==e.code){keyConfigNotice='そのキーは別の操作に設定済みです';return;}keyConfig[keyCaptureAction]=e.code;keyCaptureAction='';keyConfigNotice='キーを変更しました。保存ボタンを押してください';return;}
 },{capture:true});
@@ -1218,7 +1274,7 @@ function drawTitleScreen() {
     }
 
     // ホーム画面右上のキー設定ボタン
-    stroke(220); strokeWeight(2); fill(40, 40, 75); rect(width - 260, 18, 125, 42, 8); noStroke(); fill(255); textSize(17); textAlign(CENTER, CENTER); text('キー設定', width - 197, 39);
+    stroke(220); strokeWeight(2); fill(40, 40, 75); rect(width - 260, 18, 125, 42, 8); noStroke(); fill(255); textSize(17); textAlign(CENTER, CENTER); text('プロフィール', width - 197, 39);
 
     // ホーム画面右上のヘルプボタン
     stroke(220); strokeWeight(2); fill(40, 40, 75);
@@ -1678,7 +1734,7 @@ function handleTitlePointer(px, py) {
     if ((px >= x + panelW - 150 && px <= x + panelW - 10 && py >= y + panelH - 65 && py <= y + panelH - 5) || px < x || px > x + panelW || py < y || py > y + panelH) helpOpen = false;
     return true;
   }
-  if (px >= width - 270 && px <= width - 135 && py >= 12 && py <= 65) { keyConfigOpen=true; keyConfigNotice=''; requestKeyConfigLoad(); return true; }
+  if (px >= width - 270 && px <= width - 135 && py >= 12 && py <= 65) { keyConfigOpen=true; profileTab='profile'; profileNotice=''; requestProfileLoad(); return true; }
   if (px >= width - 130 && px <= width - 15 && py >= 12 && py <= 65) { helpOpen = true; return true; }
 
   // オンラインのホストは、人数がそろったらSTARTボタンを押して開始する。
