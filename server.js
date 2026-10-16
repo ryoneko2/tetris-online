@@ -119,9 +119,23 @@ wss.on('connection',ws=>{
    const incoming=msg.keyConfig;
    const allowed=new Set(['KeyA','KeyB','KeyC','KeyD','KeyE','KeyF','KeyG','KeyH','KeyI','KeyJ','KeyK','KeyL','KeyM','KeyN','KeyO','KeyP','KeyQ','KeyR','KeyS','KeyT','KeyU','KeyV','KeyW','KeyX','KeyY','KeyZ','Digit0','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight','ControlLeft','AltLeft']);
    const actions=['left','right','down','hardDrop','rotateLeft','rotateRight','hold'];
-   if(!incoming||typeof incoming!=='object'||actions.some(k=>!allowed.has(incoming[k])))return send(ws,{type:'error',message:'キー設定の内容が不正です。'});
-   if(new Set(actions.map(k=>incoming[k])).size!==actions.length)return send(ws,{type:'error',message:'同じキーを複数の操作に設定できません。'});
-   const p=getProfile(uid);p.keyConfig=Object.fromEntries(actions.map(k=>[k,incoming[k]]));p.updatedAt=Date.now();await saveProfiles();send(ws,{type:'keyConfigSaved'});
+   if(!incoming||typeof incoming!=='object'||Array.isArray(incoming))return send(ws,{type:'error',message:'キー設定の内容が不正です。'});
+   // 旧形式（文字列1つ）と新形式（キーコード配列）の両方を受け付ける
+   const normalized={};
+   for(const action of actions){
+    const raw=incoming[action];
+    const keys=Array.isArray(raw)?raw:[raw];
+    const unique=[...new Set(keys.filter(k=>typeof k==='string'&&allowed.has(k)))];
+    if(!unique.length||unique.length!==keys.length)return send(ws,{type:'error',message:'キー設定の内容が不正です。'});
+    normalized[action]=unique;
+   }
+   // 同じキーを別々の操作に重複割り当てしない
+   const allKeys=actions.flatMap(action=>normalized[action]);
+   if(new Set(allKeys).size!==allKeys.length)return send(ws,{type:'error',message:'同じキーを複数の操作に設定できません。'});
+   const p=getProfile(uid);
+   // 配列形式で保存し、複数キー設定を保持する
+   p.keyConfig=Object.fromEntries(actions.map(action=>[action,normalized[action]]));
+   p.updatedAt=Date.now();await saveProfiles();send(ws,{type:'keyConfigSaved'});
   }catch(e){send(ws,{type:'error',message:e.message||'キー設定を保存できませんでした。'});}return;
  }
  if(msg.type==='profileRequest'){
