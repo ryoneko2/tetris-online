@@ -77,19 +77,26 @@ var profileTab = 'profile';
 var profileNotice = '';
 var keyCaptureAction = '';
 var keyConfigNotice = '';
-var keyConfig = { left:'KeyA', right:'KeyD', down:'KeyS', hardDrop:'KeyW', rotateLeft:'KeyG', rotateRight:'KeyF', hold:'KeyC' };
-var keyConfigDefaults = { left:'KeyA', right:'KeyD', down:'KeyS', hardDrop:'KeyW', rotateLeft:'KeyG', rotateRight:'KeyF', hold:'KeyC' };
+var keyConfig = { left:['KeyA'], right:['KeyD'], down:['KeyS'], hardDrop:['KeyW'], rotateLeft:['KeyG'], rotateRight:['KeyF'], hold:['KeyC'] };
+var keyConfigDefaults = { left:['KeyA'], right:['KeyD'], down:['KeyS'], hardDrop:['KeyW'], rotateLeft:['KeyG'], rotateRight:['KeyF'], hold:['KeyC'] };
 var keyConfigActions = [ ['left','左移動'], ['right','右移動'], ['down','下移動'], ['hardDrop','ハードドロップ'], ['rotateLeft','左回転'], ['rotateRight','右回転'], ['hold','ホールド'] ];
 function keyCodeLabel(code){ const names={Space:'Space',ArrowLeft:'←',ArrowRight:'→',ArrowUp:'↑',ArrowDown:'↓',Enter:'Enter',ShiftLeft:'左Shift',ShiftRight:'右Shift',ControlLeft:'左Ctrl',AltLeft:'左Alt'}; if(names[code])return names[code]; return String(code||'').replace(/^Key/,'').replace(/^Digit/,''); }
 function keyCodeNumber(code){ if(code==='Space')return 32; if(code==='ArrowLeft')return LEFT_ARROW; if(code==='ArrowRight')return RIGHT_ARROW; if(code==='ArrowUp')return UP_ARROW; if(code==='ArrowDown')return DOWN_ARROW; if(/^Key[A-Z]$/.test(code))return code.charCodeAt(3); if(/^Digit[0-9]$/.test(code))return code.charCodeAt(5); return -1; }
-function isBoundKey(code){ return keyConfigActions.some(a=>keyConfig[a[0]]===code); }
+function normalizeKeyConfig(config){ const out={}; keyConfigActions.forEach(([name])=>{const v=config&&config[name];out[name]=Array.from(new Set((Array.isArray(v)?v:[v]).filter(x=>typeof x==='string'&&x.length)));if(!out[name].length)out[name]=[keyConfigDefaults[name][0]];});return out;}
+function keysForAction(action){const v=keyConfig[action];return Array.isArray(v)?v:[v].filter(Boolean);}
+function actionHasKey(action,code){return keysForAction(action).includes(code);}
+function isBoundKey(code){ return keyConfigActions.some(([name])=>keysForAction(name).includes(code));}
+function keyConfigLabel(action){return keysForAction(action).map(keyCodeLabel).join(' + ');}
+function keyConfigNumberFor(action){return keysForAction(action).map(keyCodeNumber).filter(n=>n>=0);}
+function keyCodeToCode(n){if(n===32)return 'Space';if(n===LEFT_ARROW)return 'ArrowLeft';if(n===RIGHT_ARROW)return 'ArrowRight';if(n===UP_ARROW)return 'ArrowUp';if(n===DOWN_ARROW)return 'ArrowDown';if(n>=65&&n<=90)return 'Key'+String.fromCharCode(n);if(n>=48&&n<=57)return 'Digit'+String.fromCharCode(n);return '';} 
+function keyConfigIsDown(action){return keyConfigNumberFor(action).some(n=>keyIsDown(n));}
 function requestKeyConfigSave(){
   const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
   const user=auth&&auth.currentUser;
   if(!user){keyConfigNotice='先にGoogleログインしてください';return;}
   user.getIdToken().then(token=>{
     const sock=new WebSocket(ONLINE_SERVER_URL);
-    sock.onopen=()=>sock.send(JSON.stringify({type:'keyConfigSave',idToken:token,uid:user.uid,keyConfig}));
+    sock.onopen=()=>sock.send(JSON.stringify({type:'keyConfigSave',idToken:token,uid:user.uid,keyConfig:normalizeKeyConfig(keyConfig)}));
     sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='keyConfigSaved')keyConfigNotice='アカウントに保存しました';else if(m.type==='error')keyConfigNotice=m.message||'保存できませんでした';}catch(_){}};
     sock.onerror=()=>{keyConfigNotice='保存に失敗しました（通信を確認してください）'};
     setTimeout(()=>{try{sock.close()}catch(_){}},4000);
@@ -105,7 +112,7 @@ function requestKeyConfigLoad(){
   user.getIdToken().then(token=>{
     const sock=new WebSocket(ONLINE_SERVER_URL);
     sock.onopen=()=>sock.send(JSON.stringify({type:'keyConfigGet',idToken:token,uid:user.uid}));
-    sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='keyConfig'){if(m.keyConfig&&typeof m.keyConfig==='object')keyConfig={...keyConfigDefaults,...m.keyConfig};keyConfigNotice=m.keyConfig?'アカウントのキー設定を読み込みました':'保存済み設定はありません';}}catch(_){}};
+    sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='keyConfig'){if(m.keyConfig&&typeof m.keyConfig==='object')keyConfig=normalizeKeyConfig({...keyConfigDefaults,...m.keyConfig});keyConfigNotice=m.keyConfig?'アカウントのキー設定を読み込みました':'保存済み設定はありません';}}catch(_){}};
     setTimeout(()=>{try{sock.close()}catch(_){}},4000);
   }).catch(()=>{});
 }
@@ -211,7 +218,7 @@ function drawKeyConfigOverlay(){
   }else{
     textAlign(CENTER,CENTER); textSize(13); fill(205); text('操作を選び、割り当てたいキーを押してください',width/2,183);
     const startY=205, rowH=43;
-    keyConfigActions.forEach((a,i)=>{const y=startY+i*rowH; fill(keyCaptureAction===a[0]?'#385b83':'#202943'); rect(180,y,740,35,7); fill(255); textAlign(LEFT,CENTER); textSize(17); text(a[1],205,y+17); textAlign(RIGHT,CENTER); fill(keyCaptureAction===a[0]?'#ffe082':'#9fe7ff'); text(keyCaptureAction===a[0]?'キーを押してください':keyCodeLabel(keyConfig[a[0]]),895,y+17);});
+    keyConfigActions.forEach((a,i)=>{const y=startY+i*rowH; fill(keyCaptureAction===a[0]?'#385b83':'#202943'); rect(180,y,740,35,7); fill(255); textAlign(LEFT,CENTER); textSize(17); text(a[1],205,y+17); textAlign(RIGHT,CENTER); fill(keyCaptureAction===a[0]?'#ffe082':'#9fe7ff'); text(keyCaptureAction===a[0]?'キーを押してください':keyConfigLabel(a[0]),895,y+17);});
     const by=520; fill(55,70,105); rect(180,by,210,42,8); rect(410,by,210,42,8); fill(255); textAlign(CENTER,CENTER); textSize(16); text('初期設定に戻す',285,by+21); text('アカウントに保存',515,by+21);
     fill(255,220,120); textSize(14); text(keyConfigNotice,width/2,by+62);
   }
@@ -229,16 +236,16 @@ function handleKeyConfigPointer(px,py){
     return true;
   }
   const startY=205,rowH=43;
-  for(let i=0;i<keyConfigActions.length;i++){const y=startY+i*rowH;if(px>=180&&px<=920&&py>=y&&py<=y+35){keyCaptureAction=keyConfigActions[i][0];keyConfigNotice='割り当てるキーを押してください';return true;}}
+  for(let i=0;i<keyConfigActions.length;i++){const y=startY+i*rowH;if(px>=180&&px<=920&&py>=y&&py<=y+35){keyCaptureAction=keyConfigActions[i][0];keyConfig[keyCaptureAction]=[];keyConfigNotice='追加するキーを押してください（Enterで終了）';return true;}}
   const by=520;
-  if(py>=by&&py<=by+42){if(px>=180&&px<=390){keyConfig={...keyConfigDefaults};keyCaptureAction='';keyConfigNotice='初期設定に戻しました';}
+  if(py>=by&&py<=by+42){if(px>=180&&px<=390){keyConfig=normalizeKeyConfig(keyConfigDefaults);keyCaptureAction='';keyConfigNotice='初期設定に戻しました';}
     else if(px>=410&&px<=620){requestKeyConfigSave();}
     return true;}
   return true;
 }
 
 window.addEventListener('keydown',function(e){
-  if(keyConfigOpen){e.preventDefault();e.stopPropagation();if(!keyCaptureAction){if(e.code==='Escape'){keyConfigOpen=false;}return;}if(['Escape','Tab','CapsLock'].includes(e.code)){keyCaptureAction='';keyConfigNotice='キー変更をキャンセルしました';return;}if(isBoundKey(e.code)&&keyConfig[keyCaptureAction]!==e.code){keyConfigNotice='そのキーは別の操作に設定済みです';return;}keyConfig[keyCaptureAction]=e.code;keyCaptureAction='';keyConfigNotice='キーを変更しました。保存ボタンを押してください';return;}
+  if(keyConfigOpen){e.preventDefault();e.stopPropagation();if(!keyCaptureAction){if(e.code==='Escape'){keyConfigOpen=false;}return;}if(e.code==='Enter'){keyCaptureAction='';keyConfigNotice='キーの追加を終了しました。保存ボタンを押してください';return;}if(e.code==='Escape'){keyCaptureAction='';keyConfigNotice='キー追加を終了しました';return;}if(['Tab','CapsLock'].includes(e.code))return;const list=keysForAction(keyCaptureAction).slice();if(list.includes(e.code)){keyConfigNotice=keyCodeLabel(e.code)+' はすでに登録されています';return;}if(isBoundKey(e.code)){keyConfigNotice='そのキーは別の操作に設定済みです';return;}list.push(e.code);keyConfig[keyCaptureAction]=list;keyConfigNotice=keyCodeLabel(e.code)+' を追加しました。続けてキーを押すか Enter で終了';return;}
 },{capture:true});
 
 
@@ -912,7 +919,7 @@ function draw() {
       }
       // P2: 自然落下
       else if (!isLandedP2 && frameCount % framesPerDrop === 0) {
-          if (gameMode === 'ONLINE' ? !onlineGuestKeyState.down : !keyIsDown(keyCodeNumber(keyConfig.down))) {
+          if (gameMode === 'ONLINE' ? !onlineGuestKeyState.down : !keyConfigIsDown('down')) {
                moveDown(2);
           }
       }
@@ -1677,8 +1684,8 @@ function handlePlayerInput() {
         let now = millis();
        
         // --- 左右移動 (キーボード WASD OR コントローラー) ---
-        let isLeftPressed = (axisX < -0.5 || dpadLeft || keyIsDown(keyCodeNumber(keyConfig.left))); // P1: A
-        let isRightPressed = (axisX > 0.5 || dpadRight || keyIsDown(keyCodeNumber(keyConfig.right))); // P1: D
+        let isLeftPressed = (axisX < -0.5 || dpadLeft || keyConfigIsDown('left')); // P1: A
+        let isRightPressed = (axisX > 0.5 || dpadRight || keyConfigIsDown('right')); // P1: D
 
         if (isLeftPressed) {
             if (dasStartTimeLeft === 0) {
@@ -1711,7 +1718,7 @@ function handlePlayerInput() {
         }
        
         // --- 下移動 (キーボード S OR コントローラー) ---
-        if (axisY > 0.5 || dpadDown || keyIsDown(keyCodeNumber(keyConfig.down))) { // P1: S
+        if (axisY > 0.5 || dpadDown || keyConfigIsDown('down')) { // P1: S
             if (now - lastMoveDownTime > moveDownDelay) {
                 moveDown(1); 
                 lastMoveDownTime = now;
@@ -2751,9 +2758,9 @@ function handleOnlineGuestInput() {
     onlineSocket.send(JSON.stringify({
       type:'inputState',
       state: {
-        left:!!onlineGuestKeyState.left || keyIsDown(keyCodeNumber(keyConfig.left)),
-        right:!!onlineGuestKeyState.right || keyIsDown(keyCodeNumber(keyConfig.right)),
-        down:!!onlineGuestKeyState.down || keyIsDown(keyCodeNumber(keyConfig.down))
+        left:!!onlineGuestKeyState.left || keyConfigIsDown('left'),
+        right:!!onlineGuestKeyState.right || keyConfigIsDown('right'),
+        down:!!onlineGuestKeyState.down || keyConfigIsDown('down')
       }
     }));
   } catch (e) {}
@@ -3053,23 +3060,23 @@ function keyPressed() {
     // 通常のオンライン操作は下のwindow.keydownだけで処理する。
     // p5.jsのkeyPressedも同時に実行すると、W等が二重発火するためここでは止める。
     return false;
-    if (keyCode === keyCodeNumber(keyConfig.left)) {
+    if (actionHasKey('left', keyCodeToCode(keyCode))) {
       const now = millis();
       moveLeft(1); dasStartTimeLeft = now; arrTimeLeft = now;
     }
-    else if (keyCode === keyCodeNumber(keyConfig.right)) {
+    else if (actionHasKey('right', keyCodeToCode(keyCode))) {
       const now = millis();
       moveRight(1); dasStartTimeRight = now; arrTimeRight = now;
     }
-    else if (keyCode === keyCodeNumber(keyConfig.down)) {
+    else if (actionHasKey('down', keyCodeToCode(keyCode))) {
       moveDown(1); lastMoveDownTime = millis();
     }
-    else if (keyCode === keyCodeNumber(keyConfig.hardDrop)) hardDrop(1);
-    else if (keyCode === keyCodeNumber(keyConfig.rotateLeft)) rotateLeft(1);
-    else if (keyCode === keyCodeNumber(keyConfig.rotateRight)) rotateRight(1);
+    else if (actionHasKey('hardDrop', keyCodeToCode(keyCode))) hardDrop(1);
+    else if (actionHasKey('rotateLeft', keyCodeToCode(keyCode))) rotateLeft(1);
+    else if (actionHasKey('rotateRight', keyCodeToCode(keyCode))) rotateRight(1);
     else if (keyCode === UP_ARROW && keyConfig.rotateLeft === 'ArrowUp') rotateLeft(1);
     else if (keyCode === DOWN_ARROW && keyConfig.rotateRight === 'ArrowDown') rotateRight(1);
-    else if (keyCode === keyCodeNumber(keyConfig.hold)) horudoSuru(1);
+    else if (actionHasKey('hold', keyCodeToCode(keyCode))) horudoSuru(1);
     else if (key === 'p' || key === 'P') {
       if (countdownTime === 0) isPaused = !isPaused;
     }
@@ -3120,10 +3127,10 @@ function keyPressed() {
   }
 
   // --- P1 ゲーム中の操作（キー設定に従う） ---
-  if (keyCode === keyCodeNumber(keyConfig.hardDrop)) { hardDrop(1); return false; }
-  if (keyCode === keyCodeNumber(keyConfig.rotateLeft)) { rotateLeft(1); return false; }
-  if (keyCode === keyCodeNumber(keyConfig.rotateRight)) { rotateRight(1); return false; }
-  if (keyCode === keyCodeNumber(keyConfig.hold)) { horudoSuru(1); return false; }
+  if (actionHasKey('hardDrop', keyCodeToCode(keyCode))) { hardDrop(1); return false; }
+  if (actionHasKey('rotateLeft', keyCodeToCode(keyCode))) { rotateLeft(1); return false; }
+  if (actionHasKey('rotateRight', keyCodeToCode(keyCode))) { rotateRight(1); return false; }
+  if (actionHasKey('hold', keyCodeToCode(keyCode))) { horudoSuru(1); return false; }
 
   // --- P2 ゲーム中の操作 (VS_LOCAL のみ) ---
   if (gameMode === 'VS_LOCAL') {
@@ -3874,7 +3881,7 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
   window.addEventListener('keydown',e=>{
     if(!active()) return;
     const c=e.code;
-    const isControlKey=keyConfigActions.some(a=>keyConfig[a[0]]===c)||c==='Space'||['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(c);
+    const isControlKey=keyConfigActions.some(a=>actionHasKey(a[0],c))||c==='Space'||['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(c);
     if(isControlKey) e.preventDefault();
 
     // ラウンド終了：指定された操作のいずれかで全員の次ラウンド開始を要求。
@@ -3893,18 +3900,18 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
     }
 
     if(isPaused||countdownTime>0||!isStarted) return;
-    if(c===keyConfig.left) onlineGuestKeyState.left=true;
-    else if(c===keyConfig.right) onlineGuestKeyState.right=true;
-    else if(c===keyConfig.down) onlineGuestKeyState.down=true;
-    else if(c===keyConfig.hardDrop&&!e.repeat){ hardDrop(1); sendOnlineAction('hardDrop'); }
-    else if(c===keyConfig.rotateLeft&&!e.repeat){ rotateLeft(1); sendOnlineAction('rotateLeft'); }
-    else if(c===keyConfig.rotateRight&&!e.repeat){ rotateRight(1); sendOnlineAction('rotateRight'); }
-    else if(c===keyConfig.hold&&!e.repeat){ horudoSuru(1); sendOnlineAction('hold'); }
+    if(actionHasKey('left',c)) onlineGuestKeyState.left=true;
+    else if(actionHasKey('right',c)) onlineGuestKeyState.right=true;
+    else if(actionHasKey('down',c)) onlineGuestKeyState.down=true;
+    else if(actionHasKey('hardDrop',c)&&!e.repeat){ hardDrop(1); sendOnlineAction('hardDrop'); }
+    else if(actionHasKey('rotateLeft',c)&&!e.repeat){ rotateLeft(1); sendOnlineAction('rotateLeft'); }
+    else if(actionHasKey('rotateRight',c)&&!e.repeat){ rotateRight(1); sendOnlineAction('rotateRight'); }
+    else if(actionHasKey('hold',c)&&!e.repeat){ horudoSuru(1); sendOnlineAction('hold'); }
   },{passive:false});
   window.addEventListener('keyup',e=>{
-    if(e.code===keyConfig.left) onlineGuestKeyState.left=false;
-    if(e.code===keyConfig.right) onlineGuestKeyState.right=false;
-    if(e.code===keyConfig.down) onlineGuestKeyState.down=false;
+    if(actionHasKey('left',e.code)) onlineGuestKeyState.left=false;
+    if(actionHasKey('right',e.code)) onlineGuestKeyState.right=false;
+    if(actionHasKey('down',e.code)) onlineGuestKeyState.down=false;
   });
   window.addEventListener('blur',()=>{onlineGuestKeyState.left=false;onlineGuestKeyState.right=false;onlineGuestKeyState.down=false;});
 })();
