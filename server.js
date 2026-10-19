@@ -110,6 +110,27 @@ wss.on('connection',ws=>{
  if(msg.type==='leaderboardRequest'){
   try{const uid=await authenticate(msg);await loadProfiles();send(ws,{type:'leaderboard',...leaderboard(uid)});}catch(e){send(ws,{type:'error',message:e.message||'ランキングを読み込めませんでした。'});}return;
  }
+ if(msg.type==='scoreAttackSave'){
+  try{
+   const uid=await authenticate(msg);await loadProfiles();
+   const timeMs=Math.floor(Number(msg.timeMs));
+   if(!Number.isFinite(timeMs)||timeMs<1000||timeMs>3600000)return send(ws,{type:'error',message:'クリアタイムが不正です。'});
+   const p=getProfile(uid);const previous=Number(p.scoreAttackBestMs)||0;const updated=!previous||timeMs<previous;
+   if(updated){p.scoreAttackBestMs=timeMs;p.scoreAttackUpdatedAt=Date.now();p.updatedAt=Date.now();await saveProfiles();}
+   const all=Object.values(profiles).filter(x=>Number(x.scoreAttackBestMs)>0).sort((a,b)=>a.scoreAttackBestMs-b.scoreAttackBestMs);
+   const rank=all.findIndex(x=>x.uid===uid)+1;
+   send(ws,{type:'scoreAttackSaved',updated,bestMs:Number(p.scoreAttackBestMs)||timeMs,rank});
+  }catch(e){send(ws,{type:'error',message:e.message||'スコアアタック記録を保存できませんでした。'});}return;
+ }
+ if(msg.type==='scoreAttackLeaderboardRequest'){
+  try{
+   const uid=await authenticate(msg);await loadProfiles();
+   const all=Object.values(profiles).filter(x=>Number(x.scoreAttackBestMs)>0).sort((a,b)=>a.scoreAttackBestMs-b.scoreAttackBestMs);
+   const entries=all.slice(0,10).map((p,i)=>({rank:i+1,uid:p.uid||null,name:p.name||'プレイヤー',bestMs:Number(p.scoreAttackBestMs)}));
+   const own=all.find(p=>p.uid===uid);
+   send(ws,{type:'scoreAttackLeaderboard',entries,myBestMs:own?Number(own.scoreAttackBestMs):null,myRank:own?all.findIndex(p=>p.uid===uid)+1:null});
+  }catch(e){send(ws,{type:'error',message:e.message||'スコアアタックランキングを読み込めませんでした。'});}return;
+ }
  if(msg.type==='keyConfigGet'){
   try{const uid=await authenticate(msg);await loadProfiles();const p=getProfile(uid);send(ws,{type:'keyConfig',keyConfig:p.keyConfig||null});}catch(e){send(ws,{type:'error',message:e.message||'キー設定を読み込めませんでした。'});}return;
  }
