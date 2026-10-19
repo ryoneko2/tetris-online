@@ -18,6 +18,11 @@ const P2_UI_HOLD_X_OFFSET = P1_UI_NEXT_X_OFFSET + UI_RETSU * BLOKU_SAIZU; // P2 
 const P2_BOARD_X_OFFSET = P2_UI_HOLD_X_OFFSET + UI_RETSU * BLOKU_SAIZU; // P2 Board (10)
 const P2_UI_NEXT_X_OFFSET = P2_BOARD_X_OFFSET + RETSU * BLOKU_SAIZU; // P2 Next (4)
 const TOTAL_WIDTH_RETSU = UI_RETSU + RETSU + UI_RETSU + UI_RETSU + RETSU + UI_RETSU; // (4 + 10 + 4 + 4 + 10 + 4 = 36)
+// 40ラインスコアアタックでは、P1のUI＋盤面＋NEXTを画面中央に配置する。
+function getP1LayoutOffset() {
+  return gameMode === 'SCORE_ATTACK' ? Math.max(0, (width - (UI_RETSU + RETSU + UI_RETSU) * BLOKU_SAIZU) / 2) : 0;
+}
+function getP1BoardX() { return getP1LayoutOffset() + P1_BOARD_X_OFFSET; }
 // --- ▲▲▲ ---
 
 var gameMode = 'TITLE'; // 'TITLE', 'SOLO', 'VS_LOCAL', 'VS_CPU', 'ONLINE'
@@ -893,7 +898,7 @@ function draw() {
 
   // 2. P1ボードを描画
   push();
-  translate(P1_BOARD_X_OFFSET, 0); // P1ボード (x=88)
+  translate(getP1BoardX(), 0); // スコアアタック時は中央配置
   drawGrid();
   drawGameBoard(gameBoard, 0);
   drawImaNoBurokku(imaNoBurokku, 0);
@@ -1042,7 +1047,7 @@ function drawUI() {
 
   // --- プレイヤー側 (左) HOLD UI ---
   drawHoldUI(
-    P1_UI_HOLD_X_OFFSET, // 0
+    P1_UI_HOLD_X_OFFSET + getP1LayoutOffset(), // スコアアタック時は中央配置
     uiWidth,
     "PLAYER 1", 
     horudoBurokku, 
@@ -1053,7 +1058,7 @@ function drawUI() {
  
   // --- プレイヤー側 (右) NEXT/SCORE UI ---
   drawNextAndStatsUI(
-    P1_UI_NEXT_X_OFFSET, // 308
+    P1_UI_NEXT_X_OFFSET + getP1LayoutOffset(), // スコアアタック時は中央配置
     uiWidth,
     p1BurokkuBaggu, 
     p1TsugiBurokkuBaggu, 
@@ -1066,7 +1071,7 @@ function drawUI() {
   );
 
   // --- P2 / CPU側 (SOLOモード以外) ---
-  if (gameMode !== 'SOLO') {
+  if (gameMode !== 'SOLO' && gameMode !== 'SCORE_ATTACK') {
     let p2Title = (gameMode === 'VS_CPU') ? "CPU" : (gameMode === 'ONLINE' ? "PLAYER 2 ONLINE" : "PLAYER 2");
     
     // --- P2/CPU側 (左) HOLD UI ---
@@ -1099,7 +1104,7 @@ function drawUI() {
   stroke(255); 
   strokeWeight(4);
   
-  if (gameMode !== 'SOLO') {
+  if (gameMode !== 'SOLO' && gameMode !== 'SCORE_ATTACK') {
     line(P2_UI_HOLD_X_OFFSET, 0, P2_UI_HOLD_X_OFFSET, height); // 396
     line(P2_BOARD_X_OFFSET, 0, P2_BOARD_X_OFFSET, height); // 484
     line(P2_UI_NEXT_X_OFFSET, 0, P2_UI_NEXT_X_OFFSET, height); // 704
@@ -1144,7 +1149,7 @@ function drawHoldUI(uiStartX, uiWidth, title, holdType, winCount, queueArray, pl
   yPos += boxSize + 15; // 70 + 88 + 15 = 173
 
   // ★★★ アタックゲージ ★★★
-  if (gameMode !== 'SOLO') { 
+  if (gameMode !== 'SOLO' && gameMode !== 'SCORE_ATTACK') { 
     let gaugeY = yPos; // Y: 173
     let gaugeWidth = 30;
     let gaugeHeight = (GYO * BLOKU_SAIZU) - gaugeY - 15; // 440 - 173 - 15 = 252px
@@ -1557,13 +1562,13 @@ function drawPauseScreen() {
     
     // P1ボードにカバー
     push();
-    translate(P1_BOARD_X_OFFSET, 0); 
+    translate(getP1BoardX(), 0); 
     fill(0, 0, 0, 150); 
     rect(0, 0, boardWidth, boardHeight); 
     pop();
 
     // P2/CPUボードにもカバー (SOLOモード以外)
-    if (gameMode !== 'SOLO') {
+    if (gameMode !== 'SOLO' && gameMode !== 'SCORE_ATTACK') {
         push();
         translate(P2_BOARD_X_OFFSET, 0); 
         fill(0, 0, 0, 150); 
@@ -1602,7 +1607,7 @@ function drawCountdown() {
     
     // P1ボードに表示
     push();
-    translate(P1_BOARD_X_OFFSET, 0);
+    translate(getP1BoardX(), 0);
     fill(0, 0, 0, 150);
     rect(0, 0, boardWidth, boardHeight); 
     fill(255, 255, 0);
@@ -1613,7 +1618,7 @@ function drawCountdown() {
     pop();
 
     // P2/CPUボードに表示 (SOLOモード以外)
-    if (gameMode !== 'SOLO') {
+    if (gameMode !== 'SOLO' && gameMode !== 'SCORE_ATTACK') {
         push();
         translate(P2_BOARD_X_OFFSET, 0);
         fill(0, 0, 0, 150);
