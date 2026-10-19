@@ -73,6 +73,18 @@ var rankingOpen = false;
 var rankingEntries = [];
 var rankingMyRank = null;
 var rankingNotice = 'ランキングを読み込んでいます...';
+// 40ライン・スコアアタック
+var scoreAttackLines = 0;
+var scoreAttackStartMs = 0;
+var scoreAttackElapsedMs = 0;
+var scoreAttackFinished = false;
+var scoreAttackSaving = false;
+var scoreAttackNotice = '';
+var scoreAttackRanking = [];
+var scoreAttackBestMs = null;
+var scoreAttackRankingOpen = false;
+var scoreAttackStartPending = false;
+
 var profileTab = 'profile';
 var profileNotice = '';
 var keyCaptureAction = '';
@@ -159,6 +171,69 @@ function requestLeaderboard(){
     setTimeout(()=>{if(sock.readyState===WebSocket.OPEN||sock.readyState===WebSocket.CONNECTING){if(!rankingEntries.length)rankingNotice='応答がありません。再読み込みしてください';try{sock.close()}catch(_){}}},5000);
   }).catch(()=>{rankingNotice='ログイン情報を確認できませんでした';});
 }
+function requestScoreAttackSave(timeMs){
+  const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
+  const user=auth&&auth.currentUser;
+  if(!user){scoreAttackNotice='記録をランキングに保存するにはGoogleログインしてください';scoreAttackSaving=false;return;}
+  scoreAttackSaving=true; scoreAttackNotice='ランキングに記録を保存しています...';
+  user.getIdToken().then(token=>{
+    const sock=new WebSocket(ONLINE_SERVER_URL);
+    sock.onopen=()=>sock.send(JSON.stringify({type:'scoreAttackSave',idToken:token,uid:user.uid,timeMs}));
+    sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='scoreAttackSaved'){scoreAttackBestMs=m.bestMs;scoreAttackNotice=m.updated?'ランキングに記録を保存しました':'自己ベストを維持しました';requestScoreAttackLeaderboard(false);sock.close();}else if(m.type==='error'){scoreAttackNotice=m.message||'記録を保存できませんでした';sock.close();}}catch(_){} };
+    sock.onerror=()=>{scoreAttackNotice='ランキングサーバーに接続できません';scoreAttackSaving=false;};
+    setTimeout(()=>{try{sock.close()}catch(_){}},5000);
+  }).catch(()=>{scoreAttackNotice='ログイン情報を確認できませんでした';scoreAttackSaving=false;});
+}
+function requestScoreAttackLeaderboard(showNotice=true){
+  const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
+  const user=auth&&auth.currentUser;
+  if(!user){if(showNotice)scoreAttackNotice='ランキングを見るにはGoogleログインしてください';return;}
+  user.getIdToken().then(token=>{
+    const sock=new WebSocket(ONLINE_SERVER_URL);
+    sock.onopen=()=>sock.send(JSON.stringify({type:'scoreAttackLeaderboardRequest',idToken:token,uid:user.uid}));
+    sock.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='scoreAttackLeaderboard'){scoreAttackRanking=Array.isArray(m.entries)?m.entries:[];scoreAttackBestMs=m.myBestMs??scoreAttackBestMs;if(showNotice)scoreAttackNotice='';sock.close();}else if(m.type==='error'){scoreAttackNotice=m.message||'ランキングを読み込めませんでした';sock.close();}}catch(_){} };
+    sock.onerror=()=>{scoreAttackNotice='ランキングサーバーに接続できません';};
+    setTimeout(()=>{try{sock.close()}catch(_){}},5000);
+  }).catch(()=>{scoreAttackNotice='ログイン情報を確認できませんでした';});
+}
+function finishScoreAttack(){
+  if(scoreAttackFinished)return;
+  scoreAttackFinished=true; scoreAttackLines=40; scoreAttackElapsedMs=Math.max(1,millis()-scoreAttackStartMs);
+  isMatchOver=true; isRoundOver=false; scoreAttackNotice='クリア！';
+  requestScoreAttackSave(scoreAttackElapsedMs);
+}
+function formatAttackTime(ms){const v=Math.max(0,Number(ms)||0);const minutes=Math.floor(v/60000);const seconds=Math.floor((v%60000)/1000);const centis=Math.floor((v%1000)/10);return String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0')+'.'+String(centis).padStart(2,'0');}
+function drawScoreAttackHUD(){
+  const elapsed=scoreAttackFinished?scoreAttackElapsedMs:Math.max(0,millis()-scoreAttackStartMs);
+  noStroke();fill(255);textAlign(CENTER,CENTER);textSize(20);
+  text('40 LINE SPRINT',width/2,22);text('TIME  '+formatAttackTime(elapsed),width/2,48);
+  text('LINES  '+Math.min(40,scoreAttackLines)+' / 40',width/2,73);
+}
+function drawScoreAttackResult(){
+  push();rectMode(CORNER);noStroke();fill(5,8,20,235);rect(0,0,width,height);
+  fill(18,24,44);stroke(110,190,255);strokeWeight(2);rect(width/2-390,90,780,620,18);
+  noStroke();fill('#9fe7ff');textAlign(CENTER,CENTER);textSize(30);text(scoreAttackFinished?'40ライン クリア！':'ゲームオーバー',width/2,140);
+  fill(255);textSize(23);text('TIME  '+formatAttackTime(scoreAttackElapsedMs),width/2,185);
+  fill(190,215,245);textSize(15);text(scoreAttackFinished?'最速タイムを目指して再挑戦しよう':'もう一度挑戦して40ラインを目指そう',width/2,215);
+  fill('#ffe082');textSize(15);text(scoreAttackNotice||'ランキングを読み込んでいます...',width/2,246);
+  fill(255);textSize(19);text('40ライン スコアアタックランキング（上位10人）',width/2,285);
+  const top=310;
+  for(let i=0;i<10;i++){
+    const e=scoreAttackRanking[i];fill(i%2?'#182239':'#202b45');rect(width/2-300,top+i*29,600,26,4);
+    if(e){fill(i<3?['#ffe082','#d7e1ef','#e5a87a'][i]:'#fff');textAlign(LEFT,CENTER);textSize(14);text((i+1)+'. '+String(e.name||'プレイヤー').slice(0,18),width/2-285,top+i*29+13);fill('#9fe7ff');textAlign(RIGHT,CENTER);text(formatAttackTime(e.bestMs),width/2+285,top+i*29+13);}
+  }
+  fill(55,85,125);rect(width/2-290,620,170,42,8);rect(width/2-85,620,170,42,8);rect(width/2+120,620,170,42,8);
+  fill(255);textAlign(CENTER,CENTER);textSize(15);text('もう一度',width/2-205,641);text('ランキング更新',width/2,641);text('タイトルへ',width/2+205,641);pop();
+}
+function handleScoreAttackResultPointer(px,py){
+  if(gameMode!=='SCORE_ATTACK'||!isMatchOver)return false;
+  if(py>=620&&py<=662){if(px>=width/2-290&&px<=width/2-120){startScoreAttack();return true;}if(px>=width/2-85&&px<=width/2+85){requestScoreAttackLeaderboard();return true;}if(px>=width/2+120&&px<=width/2+290){gameMode='TITLE';isStarted=false;isMatchOver=false;return true;}}
+  return true;
+}
+function startScoreAttack(){
+  gameMode='SCORE_ATTACK';scoreAttackLines=0;scoreAttackElapsedMs=0;scoreAttackFinished=false;scoreAttackSaving=false;scoreAttackNotice='';scoreAttackRanking=[];isMatchOver=false;isRoundOver=false;isPaused=false;roundWinner='';scoreAttackStartMs=0;scoreAttackStartPending=true;nextRound();requestScoreAttackLeaderboard(false);
+}
+
 function drawRankingOverlay(){
   push(); rectMode(CORNER); noStroke(); fill(5,8,20,238); rect(0,0,width,height);
   const panelW=Math.min(820,width-40), panelH=Math.min(700,height-40), x=(width-panelW)/2, y=(height-panelH)/2;
@@ -586,10 +661,11 @@ function setup() {
   ];
  
   // --- タイトルボタンの初期化 ---
-  titleButtons.push({ y: 350, text: '1P SOLO', mode: 'SOLO' });
+  titleButtons.push({ y: 300, text: '1P SOLO', mode: 'SOLO' });
+  titleButtons.push({ y: 360, text: '40 LINE SCORE ATTACK', mode: 'SCORE_ATTACK' });
   titleButtons.push({ y: 420, text: '1P vs CPU', mode: 'VS_CPU' });
-  titleButtons.push({ y: 490, text: '1P vs 2P (Local)', mode: 'VS_LOCAL' });
-  titleButtons.push({ y: 560, text: 'ONLINE BATTLE', mode: 'ONLINE' });
+  titleButtons.push({ y: 480, text: '1P vs 2P (Local)', mode: 'VS_LOCAL' });
+  titleButtons.push({ y: 540, text: 'ONLINE BATTLE', mode: 'ONLINE' });
 
   restartGame();
   startJoyconDebugPanel();
@@ -855,6 +931,13 @@ function draw() {
       }
     }
     return;
+  }
+
+  // 40ライン・スコアアタック専用表示と終了判定
+  if (gameMode === 'SCORE_ATTACK') {
+    if (isMatchOver) { drawScoreAttackResult(); return; }
+    if (countdownTime <= 0) drawScoreAttackHUD();
+    if (scoreAttackLines >= 40) { finishScoreAttack(); drawScoreAttackResult(); return; }
   }
 
   // 4. 状態ごとの処理
@@ -1334,7 +1417,7 @@ function drawTitleScreen() {
 
     // ボタンの描画
     let btnWidth = 250;
-    let btnHeight = 50;
+    let btnHeight = 45;
     let btnX = (width - btnWidth) / 2;
     
     for (let i = 0; i < titleButtons.length; i++) {
@@ -1507,6 +1590,7 @@ function drawCountdown() {
     if (seconds <= 0) {
         countdownTime = 0;
         isPaused = false;
+        if (gameMode === 'SCORE_ATTACK' && scoreAttackStartPending) { scoreAttackStartMs = millis(); scoreAttackStartPending = false; }
         if (gameMode === 'VS_CPU') {
            cpuNextMove = calculateBestMove(gameBoardP2, imaNoBurokkuP2);
         }
@@ -1895,6 +1979,8 @@ function handleTitlePointer(px, py) {
       selectedButtonIndex = i;
       if (btn.mode === 'ONLINE') {
         startOnlineMenu();
+      } else if (btn.mode === 'SCORE_ATTACK') {
+        startScoreAttack();
       } else {
         gameMode = btn.mode;
         nextRound();
@@ -1906,6 +1992,7 @@ function handleTitlePointer(px, py) {
 }
 
 function mousePressed() {
+  if (gameMode === 'SCORE_ATTACK' && isMatchOver) { handleScoreAttackResultPointer(Number(mouseX),Number(mouseY)); return false; }
   // p5.js標準のmouseX/mouseYを使い、既存のメニュー操作を維持する。
   if (gameMode === 'ONLINE') {
     const count = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
@@ -2222,6 +2309,21 @@ function koteiBurokku(playerIndex) {
   // ==========================================================
   
   // SOLOモードでは攻撃計算をスキップ
+  if (gameMode === 'SCORE_ATTACK') {
+      if (linesCleared > 0) {
+        scoreAttackLines += linesCleared;
+        if (scoreAttackLines >= 40) { finishScoreAttack(); return; }
+      }
+      if (linesCleared > 0) {
+          if (isTSpin) sukoa += 800;
+          if (linesCleared === 1) sukoa += 100;
+          else if (linesCleared === 2) sukoa += 300;
+          else if (linesCleared === 3) sukoa += 500;
+          else if (linesCleared === 4) sukoa += 800;
+      }
+      spawnNewBlock(playerIndex);
+      return;
+  }
   if (gameMode === 'SOLO') {
       if (linesCleared > 0) {
           if (isTSpin) sukoa += 800;
@@ -3516,6 +3618,7 @@ function nextRound() {
 function handleRoundOver(loser) { // 'PLAYER1', 'PLAYER2', 'CPU', または 'SOLO_END'
   if (isRoundOver) return;
   isRoundOver = true;
+  if (gameMode === 'SCORE_ATTACK') { isMatchOver = true; scoreAttackFinished=false; scoreAttackElapsedMs=Math.max(1,millis()-scoreAttackStartMs); scoreAttackNotice='ゲームオーバー。記録は保存されません'; return; }
   if (gameMode === 'SOLO') { isMatchOver = true; roundWinner = 'SOLO_END'; return; }
 
   if (gameMode === 'ONLINE') {
