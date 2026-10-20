@@ -206,7 +206,7 @@ function formatAttackTime(ms){const v=Math.max(0,Number(ms)||0);const minutes=Ma
 function drawScoreAttackHUD(){
   const elapsed=scoreAttackFinished?scoreAttackElapsedMs:Math.max(0,millis()-scoreAttackStartMs);
   // Score Attack is single-player: keep the board centered, show HUD at the side, and suppress opponent UI.
-  const cardW=238, cardH=154, cardX=Math.max(12,width/2-440), cardY=Math.max(112,height*0.28);
+  const cardW=238, cardH=154, cardX=Math.min(width-cardW-18, Math.max(width/2+245, width-270)), cardY=Math.max(112,height*0.28);
   push(); rectMode(CORNER);
   noStroke(); fill(8,12,28,225); rect(cardX,cardY,cardW,cardH,12);
   stroke(80,150,220); strokeWeight(2); noFill(); rect(cardX,cardY,cardW,cardH,12);
