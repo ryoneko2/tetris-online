@@ -18,11 +18,6 @@ const P2_UI_HOLD_X_OFFSET = P1_UI_NEXT_X_OFFSET + UI_RETSU * BLOKU_SAIZU; // P2 
 const P2_BOARD_X_OFFSET = P2_UI_HOLD_X_OFFSET + UI_RETSU * BLOKU_SAIZU; // P2 Board (10)
 const P2_UI_NEXT_X_OFFSET = P2_BOARD_X_OFFSET + RETSU * BLOKU_SAIZU; // P2 Next (4)
 const TOTAL_WIDTH_RETSU = UI_RETSU + RETSU + UI_RETSU + UI_RETSU + RETSU + UI_RETSU; // (4 + 10 + 4 + 4 + 10 + 4 = 36)
-// 40ラインスコアアタックでは、P1のUI＋盤面＋NEXTを画面中央に配置する。
-function getP1LayoutOffset() {
-  return gameMode === 'SCORE_ATTACK' ? Math.max(0, (width - (UI_RETSU + RETSU + UI_RETSU) * BLOKU_SAIZU) / 2) : 0;
-}
-function getP1BoardX() { return getP1LayoutOffset() + P1_BOARD_X_OFFSET; }
 // --- ▲▲▲ ---
 
 var gameMode = 'TITLE'; // 'TITLE', 'SOLO', 'VS_LOCAL', 'VS_CPU', 'ONLINE'
@@ -210,9 +205,21 @@ function finishScoreAttack(){
 function formatAttackTime(ms){const v=Math.max(0,Number(ms)||0);const minutes=Math.floor(v/60000);const seconds=Math.floor((v%60000)/1000);const centis=Math.floor((v%1000)/10);return String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0')+'.'+String(centis).padStart(2,'0');}
 function drawScoreAttackHUD(){
   const elapsed=scoreAttackFinished?scoreAttackElapsedMs:Math.max(0,millis()-scoreAttackStartMs);
-  noStroke();fill(255);textAlign(CENTER,CENTER);textSize(20);
-  text('40 LINE SPRINT',width/2,22);text('TIME  '+formatAttackTime(elapsed),width/2,48);
-  text('LINES  '+Math.min(40,scoreAttackLines)+' / 40',width/2,73);
+  // Score Attack is single-player: keep the board centered, show HUD at the side, and suppress opponent UI.
+  const cardW=238, cardH=154, cardX=Math.max(12,width/2-440), cardY=Math.max(112,height*0.28);
+  push(); rectMode(CORNER);
+  noStroke(); fill(8,12,28,225); rect(cardX,cardY,cardW,cardH,12);
+  stroke(80,150,220); strokeWeight(2); noFill(); rect(cardX,cardY,cardW,cardH,12);
+  noStroke(); fill('#9fe7ff'); textAlign(CENTER,CENTER); textSize(18);
+  text('40 LINE SPRINT',cardX+cardW/2,cardY+25);
+  fill(170,190,220); textSize(13); text('TIME',cardX+cardW/2,cardY+53);
+  fill(255); textSize(27); text(formatAttackTime(elapsed),cardX+cardW/2,cardY+80);
+  fill(170,190,220); textSize(13); text('CLEARED LINES',cardX+cardW/2,cardY+108);
+  fill('#ffe082'); textSize(23); text(Math.min(40,scoreAttackLines)+' / 40',cardX+cardW/2,cardY+132);
+  // Progress bar
+  fill(35,47,70); rect(cardX+20,cardY+142,cardW-40,5,3);
+  fill('#59d9a5'); rect(cardX+20,cardY+142,(cardW-40)*Math.min(40,scoreAttackLines)/40,5,3);
+  pop();
 }
 function drawScoreAttackResult(){
   push();rectMode(CORNER);noStroke();fill(5,8,20,235);rect(0,0,width,height);
@@ -898,7 +905,7 @@ function draw() {
 
   // 2. P1ボードを描画
   push();
-  translate(getP1BoardX(), 0); // スコアアタック時は中央配置
+  translate(P1_BOARD_X_OFFSET, 0); // P1ボード (x=88)
   drawGrid();
   drawGameBoard(gameBoard, 0);
   drawImaNoBurokku(imaNoBurokku, 0);
@@ -1047,7 +1054,7 @@ function drawUI() {
 
   // --- プレイヤー側 (左) HOLD UI ---
   drawHoldUI(
-    P1_UI_HOLD_X_OFFSET + getP1LayoutOffset(), // スコアアタック時は中央配置
+    P1_UI_HOLD_X_OFFSET, // 0
     uiWidth,
     "PLAYER 1", 
     horudoBurokku, 
@@ -1058,7 +1065,7 @@ function drawUI() {
  
   // --- プレイヤー側 (右) NEXT/SCORE UI ---
   drawNextAndStatsUI(
-    P1_UI_NEXT_X_OFFSET + getP1LayoutOffset(), // スコアアタック時は中央配置
+    P1_UI_NEXT_X_OFFSET, // 308
     uiWidth,
     p1BurokkuBaggu, 
     p1TsugiBurokkuBaggu, 
@@ -1261,7 +1268,7 @@ function drawNextAndStatsUI(
   yPos = scoreY + 45; // 465
 
   // --- 攻撃力 (AP) / 待機キュー表示 (SOLOモード以外) ---
-  if (gameMode !== 'SOLO') {
+  if (gameMode !== 'SOLO' && gameMode !== 'SCORE_ATTACK') {
     let attackY = yPos; // Y: 465
     textSize(18); 
     fill(255);
@@ -1562,7 +1569,7 @@ function drawPauseScreen() {
     
     // P1ボードにカバー
     push();
-    translate(getP1BoardX(), 0); 
+    translate(P1_BOARD_X_OFFSET, 0); 
     fill(0, 0, 0, 150); 
     rect(0, 0, boardWidth, boardHeight); 
     pop();
@@ -1607,7 +1614,7 @@ function drawCountdown() {
     
     // P1ボードに表示
     push();
-    translate(getP1BoardX(), 0);
+    translate(P1_BOARD_X_OFFSET, 0);
     fill(0, 0, 0, 150);
     rect(0, 0, boardWidth, boardHeight); 
     fill(255, 255, 0);
