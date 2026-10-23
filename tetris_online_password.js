@@ -1447,107 +1447,102 @@ function drawMiniBurokku(type, centerX, centerY) {
 
 // ▼▼▼ 修正点 7 (テトリス25): タイトル画面の描画 ▼▼▼
 function drawTitleScreen() {
-    fill(10, 10, 20, 200); 
-    rect(0, 0, width, height); 
+    // 落ち着いたネイビー背景と控えめなグリッドで、ホーム画面を整理する。
+    background(9, 12, 28);
+    push();
+    stroke(32, 42, 68, 95); strokeWeight(1);
+    for (let gx = 0; gx < width; gx += 40) line(gx, 0, gx, height);
+    for (let gy = 0; gy < height; gy += 40) line(0, gy, width, gy);
+    noStroke();
+    fill(24, 48, 88, 75); ellipse(width / 2, 165, 620, 280);
+    fill(12, 18, 38, 235); rect(0, 0, width, 78);
+    pop();
 
-    fill(0, 255, 0);
-    stroke(0);
-    textSize(60);
+    // タイトルロゴ
+    push();
     textAlign(CENTER, CENTER);
-    text("TETRIS BATTLE", width / 2, height / 2 - 150); 
-    
-    textSize(20);
-    fill(255);
-    text("Press A (Gamepad/Keyboard) or Click to Select", width / 2, height / 2 - 80);
+    noStroke(); fill(80, 220, 255, 45); textSize(49); textStyle(BOLD);
+    text('TETRIS BATTLE', width / 2 + 2, 142 + 3);
+    fill(245, 250, 255); textSize(47); text('TETRIS BATTLE', width / 2, 142);
+    fill(88, 220, 255); rect(width / 2 - 92, 177, 184, 4, 2);
+    fill(177, 194, 220); textStyle(NORMAL); textSize(15);
+    text('CHOOSE YOUR GAME MODE', width / 2, 205);
+    pop();
 
-    // ボタンの描画
-    let btnWidth = 250;
-    let btnHeight = 45;
-    let btnX = (width - btnWidth) / 2;
-    
+    // メインメニューをひとつのまとまったカードにする。
+    const btnWidth = Math.min(430, width - 40);
+    const btnHeight = 44;
+    const btnX = (width - btnWidth) / 2;
+    const panelX = btnX - 22, panelY = 230, panelW = btnWidth + 44, panelH = 440;
+    push();
+    stroke(55, 76, 115); strokeWeight(1.5); fill(14, 21, 43, 238);
+    rect(panelX, panelY, panelW, panelH, 18);
+    noStroke(); fill(100, 220, 255); textAlign(LEFT, CENTER); textSize(12); textStyle(BOLD);
+    text('GAME MODES', panelX + 22, panelY + 22);
+    pop();
+
     for (let i = 0; i < titleButtons.length; i++) {
-        let btn = titleButtons[i];
-        
-        if (i === selectedButtonIndex) {
-            fill(70, 70, 120);
-            stroke(255, 255, 0); 
-            strokeWeight(3);
-        } else {
-            fill(40, 40, 80);
-            stroke(150);
-            strokeWeight(2);
+        const btn = titleButtons[i];
+        const y = btn.y;
+        const hovered = mouseX >= btnX && mouseX <= btnX + btnWidth && mouseY >= y && mouseY <= y + btnHeight;
+        const selected = i === selectedButtonIndex;
+        let accent = [80, 205, 255];
+        if (btn.mode === 'ONLINE') accent = [85, 230, 165];
+        if (btn.mode === 'SCORE_ATTACK' || btn.mode === 'SCORE_ATTACK_RANKING') accent = [255, 190, 75];
+        push();
+        stroke(selected || hovered ? accent : [55, 70, 105]);
+        strokeWeight(selected || hovered ? 2.5 : 1.2);
+        fill(selected || hovered ? [35, 52, 86] : [23, 32, 58]);
+        rect(btnX, y, btnWidth, btnHeight, 10);
+        noStroke(); fill(accent); rect(btnX + 12, y + 10, 4, btnHeight - 20, 2);
+        fill(245, 248, 255); textAlign(CENTER, CENTER);
+        textStyle(BOLD); textSize(btn.text.length > 18 ? 17 : 19);
+        text(btn.text, width / 2, y + btnHeight / 2);
+        if (selected) {
+            fill(accent); textSize(15); text('›', btnX + btnWidth - 20, y + btnHeight / 2);
         }
-        rect(btnX, btn.y, btnWidth, btnHeight, 10);
-        
-        if (i !== selectedButtonIndex && mouseX > btnX && mouseX < btnX + btnWidth && mouseY > btn.y && mouseY < btn.y + btnHeight) {
-            fill(70, 70, 120);
-            rect(btnX, btn.y, btnWidth, btnHeight, 10);
-        }
-        
-        noStroke();
-        if (btn.mode === 'ONLINE') {
-            fill(255);
-        } else {
-            fill(255);
-        }
-        textSize(24);
-        textAlign(CENTER, CENTER);
-        text(btn.text, btnX + btnWidth / 2, btn.y + btnHeight / 2);
+        pop();
     }
 
     if (onlineStatus) {
-        fill(255, 255, 0);
-        textSize(18);
+        push(); noStroke(); fill(255, 218, 105); textAlign(CENTER, CENTER); textSize(16);
         const onlineCountForTitle = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
         const showHostStartTitle = !!(onlineRoom && onlineRole === 1 && onlineJoinedCount >= onlineCountForTitle && !onlineMatchStarted);
-        text(onlineStatus, width / 2, showHostStartTitle ? 540 : 650);
-        if (onlineRoom) {
-            fill(255);
-            textSize(24);
-            text('ROOM: ' + onlineRoom, width / 2, showHostStartTitle ? 575 : 685);
-        }
+        text(onlineStatus, width / 2, showHostStartTitle ? 700 : 730);
+        if (onlineRoom) { fill(240); textSize(18); text('ROOM: ' + onlineRoom, width / 2, showHostStartTitle ? 723 : 752); }
+        pop();
     }
 
-    // 人数がそろったホストだけ、タイトル画面上にSTARTボタンを表示する。
+    // 人数がそろったホストだけ、STARTボタンを表示する。
     const onlineCount = Math.max(2, Math.min(4, Number(onlinePlayerCount) || 2));
     if (onlineRoom && onlineRole === 1 && onlineJoinedCount >= onlineCount && !onlineMatchStarted) {
-        const bx = width / 2 - 160;
-        const by = 605;
-        const bw = 320;
-        const bh = 58;
-        stroke(255, 255, 0);
-        strokeWeight(3);
-        fill(45, 125, 75);
-        rect(bx, by, bw, bh, 10);
-        noStroke();
-        fill(255);
-        textSize(24);
-        text('対戦を開始する（START）', width / 2, by + bh / 2);
-        fill(220);
-        textSize(12);
-        text('ホストだけが押せます', width / 2, by + bh + 16);
+        const bx = width / 2 - 160, by = 690, bw = 320, bh = 48;
+        push(); stroke(100, 255, 180); strokeWeight(2); fill(24, 105, 76); rect(bx, by, bw, bh, 10);
+        noStroke(); fill(255); textAlign(CENTER, CENTER); textSize(20); textStyle(BOLD); text('対戦を開始する（START）', width / 2, by + bh / 2); pop();
     }
 
     if (onlineProfile && onlineProfile.rating !== undefined) {
-      noStroke(); fill(220); textSize(14); textAlign(LEFT, TOP);
-      text(`Google: ${onlineProfile.displayName || 'ログイン中'}  レート ${onlineProfile.rating}  勝 ${onlineProfile.wins || 0} 敗 ${onlineProfile.losses || 0}`, 18, 18);
+        push(); noStroke(); fill(12, 21, 42, 235); stroke(65, 88, 130); rect(18, 92, 250, 58, 10);
+        noStroke(); fill(230, 240, 255); textAlign(LEFT, TOP); textSize(12);
+        text(`ログイン中：${onlineProfile.displayName || 'プレイヤー'}`, 30, 102);
+        fill(100, 220, 255); textSize(13); text(`RATE ${onlineProfile.rating}  WIN ${onlineProfile.wins || 0} / LOSS ${onlineProfile.losses || 0}`, 30, 123); pop();
     }
 
-    // ホーム画面右上のプロフィール・ランキングボタン
-    stroke(220); strokeWeight(2); fill(40, 40, 75); rect(width - 395, 18, 125, 42, 8); noStroke(); fill(255); textSize(17); textAlign(CENTER, CENTER); text('ランキング', width - 332, 39);
-    stroke(220); strokeWeight(2); fill(40, 40, 75); rect(width - 260, 18, 125, 42, 8); noStroke(); fill(255); textSize(17); textAlign(CENTER, CENTER); text('プロフィール', width - 197, 39);
-
-    // ホーム画面右上のヘルプボタン
-    stroke(220); strokeWeight(2); fill(40, 40, 75);
-    rect(width - 125, 18, 105, 42, 8);
-    noStroke(); fill(255); textSize(19); textAlign(CENTER, CENTER);
-    text('？ ヘルプ', width - 72, 39);
+    // 右上のユーティリティを同じデザインで統一。
+    const utilityButtons = [
+        { x: width - 395, w: 125, label: 'ランキング' },
+        { x: width - 260, w: 125, label: 'プロフィール' },
+        { x: width - 125, w: 105, label: '？ ヘルプ' }
+    ];
+    for (const b of utilityButtons) {
+        push(); stroke(70, 91, 132); strokeWeight(1.2); fill(22, 32, 58); rect(b.x, 18, b.w, 42, 9);
+        noStroke(); fill(235, 243, 255); textAlign(CENTER, CENTER); textSize(b.label.length > 5 ? 14 : 16); text(b.label, b.x + b.w / 2, 39); pop();
+    }
 
     if (helpOpen) drawHelpOverlay();
     if (keyConfigOpen) drawKeyConfigOverlay();
     if (rankingOpen) drawRankingOverlay();
 }
-// ▲▲▲
 
 function drawHelpOverlay() {
     push();
@@ -2014,7 +2009,7 @@ function handleTitlePointer(px, py) {
     }
   }
 
-  const btnWidth = 250;
+  const btnWidth = Math.min(430, width - 40);
   const btnHeight = 50;
   const btnX = (width - btnWidth) / 2;
 
