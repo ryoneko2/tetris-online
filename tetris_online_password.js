@@ -2569,15 +2569,41 @@ async function startOnlineMenu() {
     }
     try {
       const auth = firebase.auth();
+      // Firebaseがログイン状態を復元し終える前に currentUser を読むと、
+      // 既にログイン済みでも null になり、サーバーへIDトークンが送られないことがある。
+      if (typeof auth.authStateReady === 'function') {
+        await auth.authStateReady();
+      } else if (!auth.currentUser && typeof auth.onAuthStateChanged === 'function') {
+        await new Promise(resolve => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; resolve(); } };
+          const unsubscribe = auth.onAuthStateChanged(() => { finish(); try { unsubscribe(); } catch (_) {} });
+          setTimeout(finish, 2500);
+        });
+      }
       if (!auth.currentUser) {
         const provider = new firebase.auth.GoogleAuthProvider();
         await auth.signInWithPopup(provider);
       }
+      // Popup完了直後の currentUser 更新タイミングにも備え、認証状態を再確認する。
       onlineUser = auth.currentUser;
+      if (!onlineUser && typeof auth.onAuthStateChanged === 'function') {
+        onlineUser = await new Promise((resolve, reject) => {
+          let done = false;
+          const timer = setTimeout(() => { if (!done) { done = true; reject(new Error('ログイン状態の確認がタイムアウトしました')); } }, 5000);
+          const unsubscribe = auth.onAuthStateChanged(user => {
+            if (user && !done) { done = true; clearTimeout(timer); try { unsubscribe(); } catch (_) {} resolve(user); }
+          }, error => { if (!done) { done = true; clearTimeout(timer); try { unsubscribe(); } catch (_) {} reject(error); } });
+        });
+      }
+      if (!onlineUser) throw new Error('ログイン状態を確認できませんでした');
       onlineIdToken = await onlineUser.getIdToken(true);
+      if (!onlineIdToken || typeof onlineIdToken !== 'string') throw new Error('認証トークンを取得できませんでした');
       onlineProfile = { uid: onlineUser.uid, displayName: onlineUser.displayName || playerName, email: onlineUser.email || '' };
     } catch (e) {
-      alert('Googleログインに失敗しました。Firebaseの承認済みドメインと設定を確認してください。');
+      console.error('オンライン対戦のGoogle認証エラー:', e);
+      onlineIdToken = '';
+      alert('Googleログイン状態を確認できませんでした。ページを再読み込みして再度お試しください。');
       return;
     }
     onlineQueueMode = 'ranked';
@@ -2629,6 +2655,11 @@ function connectOnlineSocket(action) {
 
   onlineSocket.onopen = () => {
     onlineConnected = true;
+    if (onlineQueueMode === 'ranked' && !onlineIdToken) {
+      onlineStatus = 'Googleログイン情報がありません。ログインし直してください。';
+      try { onlineSocket.close(); } catch (_) {}
+      return;
+    }
     onlineStatus = action === 'create' ? '部屋を作成中...' : 'パスワードを確認中...';
     onlineSocket.send(JSON.stringify({
       type: action,
