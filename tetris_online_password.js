@@ -83,6 +83,7 @@ var scoreAttackNotice = '';
 var scoreAttackRanking = [];
 var scoreAttackBestMs = null;
 var scoreAttackRankingOpen = false;
+var scoreAttackRankingPage = false;
 var scoreAttackStartPending = false;
 
 var profileTab = 'profile';
@@ -196,6 +197,30 @@ function requestScoreAttackLeaderboard(showNotice=true){
     setTimeout(()=>{try{sock.close()}catch(_){}},5000);
   }).catch(()=>{scoreAttackNotice='ログイン情報を確認できませんでした';});
 }
+function drawScoreAttackRankingPage(){
+  background(5,8,20); push();
+  fill('#9fe7ff'); textAlign(CENTER,CENTER); textSize(30); text('40ライン スコアアタックランキング',width/2,75);
+  fill(190,215,245); textSize(14); text('40ラインモードをプレイしなくても閲覧できます',width/2,108);
+  for(let i=0;i<10;i++){
+    const e=scoreAttackRanking[i], y=145+i*39;
+    fill(i%2?'#182239':'#202b45'); noStroke(); rect(width/2-300,y,600,32,5);
+    if(e){ fill(i<3?['#ffe082','#d7e1ef','#e5a87a'][i]:'#fff'); textAlign(LEFT,CENTER); textSize(16); text((i+1)+'. '+String(e.name||'プレイヤー').slice(0,20),width/2-280,y+16); fill('#9fe7ff'); textAlign(RIGHT,CENTER); text(formatAttackTime(e.bestMs),width/2+280,y+16); }
+    else { fill(120,135,160); textAlign(LEFT,CENTER); textSize(14); text((i+1)+'. ---',width/2-280,y+16); }
+  }
+  fill('#304d72'); rect(width/2-250,565,150,48,8); rect(width/2-75,565,150,48,8); rect(width/2+100,565,150,48,8);
+  fill(255); textAlign(CENTER,CENTER); textSize(16); text('ランキング更新',width/2-175,589); text('40ラインをプレイ',width/2,589); text('タイトルへ戻る',width/2+175,589);
+  fill('#ffe082'); textSize(14); text(scoreAttackNotice||'',width/2,640); pop();
+}
+function handleScoreAttackRankingPagePointer(px,py){
+  if(!scoreAttackRankingPage) return false;
+  if(py>=550&&py<=630){
+    if(px>=width/2-260&&px<=width/2-90){requestScoreAttackLeaderboard(true);return true;}
+    if(px>=width/2-85&&px<=width/2+85){scoreAttackRankingPage=false;startScoreAttack();return true;}
+    if(px>=width/2+90&&px<=width/2+260){scoreAttackRankingPage=false;gameMode='TITLE';isStarted=false;isMatchOver=false;return true;}
+  }
+  return true;
+}
+
 function finishScoreAttack(){
   if(scoreAttackFinished)return;
   scoreAttackFinished=true; scoreAttackLines=40; scoreAttackElapsedMs=Math.max(1,millis()-scoreAttackStartMs);
@@ -239,7 +264,12 @@ function drawScoreAttackResult(){
 }
 function handleScoreAttackResultPointer(px,py){
   if(gameMode!=='SCORE_ATTACK'||!isMatchOver)return false;
-  if(py>=620&&py<=662){if(px>=width/2-290&&px<=width/2-120){startScoreAttack();return true;}if(px>=width/2-85&&px<=width/2+85){requestScoreAttackLeaderboard();return true;}if(px>=width/2+120&&px<=width/2+290){gameMode='TITLE';isStarted=false;isMatchOver=false;return true;}}
+  // Drawn buttons occupy y=620..662; tolerate slight coordinate scaling differences.
+  if(py>=600&&py<=690){
+    if(px>=width/2-330&&px<=width/2-100){startScoreAttack();return true;}
+    if(px>=width/2-100&&px<=width/2+100){requestScoreAttackLeaderboard(true);return true;}
+    if(px>=width/2+100&&px<=width/2+330){gameMode='TITLE';isStarted=false;isMatchOver=false;scoreAttackRankingPage=false;return true;}
+  }
   return true;
 }
 function startScoreAttack(){
@@ -678,6 +708,7 @@ function setup() {
   titleButtons.push({ y: 420, text: '1P vs CPU', mode: 'VS_CPU' });
   titleButtons.push({ y: 480, text: '1P vs 2P (Local)', mode: 'VS_LOCAL' });
   titleButtons.push({ y: 540, text: 'ONLINE BATTLE', mode: 'ONLINE' });
+  titleButtons.push({ y: 600, text: '40 LINE RANKING', mode: 'SCORE_ATTACK_RANKING' });
 
   restartGame();
   startJoyconDebugPanel();
@@ -883,6 +914,8 @@ function drawOnlineCountdown(y,h){
 }
 
 function draw() {
+  if (scoreAttackRankingPage) { drawScoreAttackRankingPage(); return; }
+
   background(30, 30, 50);
   if (gameMode === 'TITLE') { drawTitleScreen(); handlePlayerInput(); return; }
 
@@ -1991,6 +2024,8 @@ function handleTitlePointer(px, py) {
       selectedButtonIndex = i;
       if (btn.mode === 'ONLINE') {
         startOnlineMenu();
+      } else if (btn.mode === 'SCORE_ATTACK_RANKING') {
+        scoreAttackRankingPage=true; scoreAttackNotice='ランキングを読み込んでいます...'; requestScoreAttackLeaderboard(true);
       } else if (btn.mode === 'SCORE_ATTACK') {
         startScoreAttack();
       } else {
@@ -2004,6 +2039,7 @@ function handleTitlePointer(px, py) {
 }
 
 function mousePressed() {
+  if (scoreAttackRankingPage) { handleScoreAttackRankingPagePointer(Number(mouseX),Number(mouseY)); return false; }
   if (gameMode === 'SCORE_ATTACK' && isMatchOver) { handleScoreAttackResultPointer(Number(mouseX),Number(mouseY)); return false; }
   // p5.js標準のmouseX/mouseYを使い、既存のメニュー操作を維持する。
   if (gameMode === 'ONLINE') {
@@ -2023,6 +2059,11 @@ function mousePressed() {
 
 // スマホでは mousePressed だけに依存せず、タッチを直接処理する。
 function touchStarted(event) {
+  if (scoreAttackRankingPage) {
+    const cnv=(gameCanvas&&gameCanvas.elt)?gameCanvas.elt:document.querySelector('canvas');
+    if(cnv&&event&&event.touches&&event.touches.length){const r=cnv.getBoundingClientRect(),t=event.touches[0];handleScoreAttackRankingPagePointer((t.clientX-r.left)*(width/r.width),(t.clientY-r.top)*(height/r.height));}
+    return false;
+  }
   if (gameMode === 'TITLE') {
     // iPhone/Safariではp5のmouseX/mouseYがCSS表示倍率とずれることがあるため、
     // 実際のcanvasの表示矩形から論理座標(1100x810)へ変換する。
