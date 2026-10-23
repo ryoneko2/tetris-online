@@ -93,14 +93,14 @@ var keyConfig = { left:['KeyA'], right:['KeyD'], down:['KeyS'], hardDrop:['KeyW'
 var keyConfigDefaults = { left:['KeyA'], right:['KeyD'], down:['KeyS'], hardDrop:['KeyW'], rotateLeft:['KeyG'], rotateRight:['KeyF'], hold:['KeyC'] };
 var keyConfigActions = [ ['left','左移動'], ['right','右移動'], ['down','下移動'], ['hardDrop','ハードドロップ'], ['rotateLeft','左回転'], ['rotateRight','右回転'], ['hold','ホールド'] ];
 function keyCodeLabel(code){ const names={Space:'Space',ArrowLeft:'←',ArrowRight:'→',ArrowUp:'↑',ArrowDown:'↓',Enter:'Enter',ShiftLeft:'左Shift',ShiftRight:'右Shift',ControlLeft:'左Ctrl',AltLeft:'左Alt'}; if(names[code])return names[code]; return String(code||'').replace(/^Key/,'').replace(/^Digit/,''); }
-function keyCodeNumber(code){ if(code==='Space')return 32; if(code==='ArrowLeft')return LEFT_ARROW; if(code==='ArrowRight')return RIGHT_ARROW; if(code==='ArrowUp')return UP_ARROW; if(code==='ArrowDown')return DOWN_ARROW; if(/^Key[A-Z]$/.test(code))return code.charCodeAt(3); if(/^Digit[0-9]$/.test(code))return code.charCodeAt(5); return -1; }
+function keyCodeNumber(code){ const special={Space:32,Enter:ENTER,Escape:ESCAPE,Tab:9,Backspace:8,CapsLock:20,ShiftLeft:16,ShiftRight:16,ControlLeft:17,ControlRight:17,AltLeft:18,AltRight:18,MetaLeft:91,MetaRight:92}; if(Object.prototype.hasOwnProperty.call(special,code))return special[code]; if(code==='ArrowLeft')return LEFT_ARROW; if(code==='ArrowRight')return RIGHT_ARROW; if(code==='ArrowUp')return UP_ARROW; if(code==='ArrowDown')return DOWN_ARROW; if(/^Key[A-Z]$/.test(code))return code.charCodeAt(3); if(/^Digit[0-9]$/.test(code))return code.charCodeAt(5); return -1; }
 function normalizeKeyConfig(config){ const out={}; keyConfigActions.forEach(([name])=>{const v=config&&config[name];out[name]=Array.from(new Set((Array.isArray(v)?v:[v]).filter(x=>typeof x==='string'&&x.length)));if(!out[name].length)out[name]=[keyConfigDefaults[name][0]];});return out;}
 function keysForAction(action){const v=keyConfig[action];return Array.isArray(v)?v:[v].filter(Boolean);}
 function actionHasKey(action,code){return keysForAction(action).includes(code);}
 function isBoundKey(code){ return keyConfigActions.some(([name])=>keysForAction(name).includes(code));}
 function keyConfigLabel(action){return keysForAction(action).map(keyCodeLabel).join(' + ');}
 function keyConfigNumberFor(action){return keysForAction(action).map(keyCodeNumber).filter(n=>n>=0);}
-function keyCodeToCode(n){if(n===32)return 'Space';if(n===LEFT_ARROW)return 'ArrowLeft';if(n===RIGHT_ARROW)return 'ArrowRight';if(n===UP_ARROW)return 'ArrowUp';if(n===DOWN_ARROW)return 'ArrowDown';if(n>=65&&n<=90)return 'Key'+String.fromCharCode(n);if(n>=48&&n<=57)return 'Digit'+String.fromCharCode(n);return '';} 
+function keyCodeToCode(n){if(n===32)return 'Space';if(n===13)return 'Enter';if(n===27)return 'Escape';if(n===9)return 'Tab';if(n===8)return 'Backspace';if(n===16)return 'ShiftLeft';if(n===17)return 'ControlLeft';if(n===18)return 'AltLeft';if(n===91)return 'MetaLeft';if(n===92)return 'MetaRight';if(n===LEFT_ARROW)return 'ArrowLeft';if(n===RIGHT_ARROW)return 'ArrowRight';if(n===UP_ARROW)return 'ArrowUp';if(n===DOWN_ARROW)return 'ArrowDown';if(n>=65&&n<=90)return 'Key'+String.fromCharCode(n);if(n>=48&&n<=57)return 'Digit'+String.fromCharCode(n);return '';} 
 function keyConfigIsDown(action){return keyConfigNumberFor(action).some(n=>keyIsDown(n));}
 function requestKeyConfigSave(){
   const auth=window.firebase&&firebase.apps&&firebase.apps.length?firebase.auth():null;
@@ -3135,8 +3135,9 @@ function applyOnlineState(s) {
 // ゲーム中に矢印キーやSpaceでブラウザ画面がスクロールするのを防ぐ。
 // オンライン専用ハンドラとは別に、ローカル対戦を含む全ゲームモードで有効にする。
 window.addEventListener('keydown', function(e) {
+  const assigned = typeof keyConfigActions !== 'undefined' && keyConfigActions.some(a => actionHasKey(a[0], e.code));
   const gameControlKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'];
-  if (gameControlKeys.includes(e.code) && typeof gameMode !== 'undefined' && gameMode !== 'TITLE') {
+  if ((assigned || gameControlKeys.includes(e.code)) && typeof gameMode !== 'undefined' && gameMode !== 'TITLE') {
     e.preventDefault();
   }
 }, { passive: false, capture: true });
@@ -4029,4 +4030,24 @@ function cpuHoldSuru() { // (horudoSuru(0) と同じ)
     if(actionHasKey('down',e.code)) onlineGuestKeyState.down=false;
   });
   window.addEventListener('blur',()=>{onlineGuestKeyState.left=false;onlineGuestKeyState.right=false;onlineGuestKeyState.down=false;});
+})();
+
+
+// 起動時にログイン状態を確定し、キー設定とプロフィールを自動取得する。画面を開く操作は不要。
+(function bootstrapAccountState(){
+  let startedForUid = '';
+  let tries = 0;
+  function attach(){
+    const auth = window.firebase && firebase.apps && firebase.apps.length ? firebase.auth() : null;
+    if (!auth) { if (++tries < 40) setTimeout(attach, 250); return; }
+    auth.onAuthStateChanged(user => {
+      if (!user) { startedForUid = ''; return; }
+      if (startedForUid === user.uid) return;
+      startedForUid = user.uid;
+      requestKeyConfigLoad();
+      requestProfileLoad();
+    });
+  }
+  if (document.readyState === 'complete') attach();
+  else window.addEventListener('load', attach, { once: true });
 })();
